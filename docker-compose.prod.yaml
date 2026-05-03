@@ -1,0 +1,97 @@
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    expose:
+      - '3000'
+    env_file:
+      - .env.prod
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DATASETS_STORAGE_DIR: /app/data/datasets
+    volumes:
+      - datasets:/app/data/datasets
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USERNAME} -d ${DB_NAME}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    environment:
+      DOMAIN: ${DOMAIN}
+    command: '/bin/sh -c ''while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec nginx -g "daemon off;"'''
+    depends_on:
+      - app
+    networks:
+      - backend
+
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: >
+      /bin/sh -c "trap exit TERM;
+      while :; do certbot renew --webroot -w /var/www/certbot --quiet;
+      sleep 12h & wait $${!}; done"
+
+volumes:
+  pgdata:
+  redisdata:
+  datasets:
+
+networks:
+  backend:
+    driver: bridge

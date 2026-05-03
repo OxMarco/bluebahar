@@ -1,0 +1,47 @@
+services:
+  app:
+    build:
+      context: .
+      target: builder
+    ports:
+      - '${PORT:-3000}:3000'
+    volumes:
+      # Mount source code for hot-reloading
+      - ./src:/app/src:delegated
+      - ./nest-cli.json:/app/nest-cli.json:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      - ./tsconfig.build.json:/app/tsconfig.build.json:ro
+      # Persist scraped WFS datasets across container restarts
+      - datasets:/app/data/datasets
+    command: npm run start:dev
+    env_file:
+      - .env
+    environment:
+      # Override DB_HOST to use docker service name
+      DB_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DATASETS_STORAGE_DIR: /app/data/datasets
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - '5433:5432'
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+
+volumes:
+  pgdata:
+  datasets:
