@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terms of Service - BlueBaħar</title>
+
+  <meta name="description" content="BlueBaħar terms of service. Conditions of use of the BlueBaħar app and informational maritime content." />
+  <meta name="author" content="Impossible Labs" />
+  <meta name="robots" content="index, follow" />
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="canonical" href="https://bluebahar.com/tos" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Montserrat:wght@300;400;500;600;700;800&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sky: '#78C3EA',
+            ink: '#152051',
+            paper: '#FEFEFE',
+            good: '#5C946E',
+            warning: '#FFC857',
+            bad: '#D80C2B',
+          },
+          fontFamily: {
+            display: ['Montserrat', 'sans-serif'],
+            body: ['Roboto', 'sans-serif'],
+            brand: ['Fredoka', 'sans-serif'],
+          },
+          boxShadow: {
+            soft: '0 24px 80px -36px rgba(21, 32, 81, 0.55)',
+            glow: '0 18px 50px -28px rgba(255, 255, 255, 0.95)',
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    :root {
+      --ink: #152051;
+      --sky: #78C3EA;
+      --paper: #FEFEFE;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-height: 100%; scroll-behavior: smooth; }
+
+    body {
+      min-height: 100vh;
+      min-height: 100svh;
+      color: var(--ink);
+      background-color: var(--sky);
+      background-image:
+        radial-gradient(circle at 22% 14%, rgba(254, 254, 254, 0.45) 0, rgba(254, 254, 254, 0) 28%),
+        radial-gradient(circle at 82% 76%, rgba(21, 32, 81, 0.10) 0, rgba(21, 32, 81, 0) 30%),
+        radial-gradient(circle, rgba(21, 32, 81, 0.055) 0.5px, transparent 0.6px);
+      background-size: auto, auto, 6px 6px;
+      font-family: 'Roboto', sans-serif;
+      text-rendering: geometricPrecision;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .doc {
+      background-color: rgba(254, 254, 254, 0.92);
+      backdrop-filter: blur(4px);
+      box-shadow: 0 24px 80px -36px rgba(21, 32, 81, 0.55);
+    }
+
+    .doc h2 {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .doc p, .doc li { line-height: 1.7; }
+
+    .doc a {
+      color: #152051;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      text-decoration-thickness: 1.5px;
+    }
+
+    .doc a:hover { text-decoration-thickness: 2.5px; }
+
+    .accent-line {
+      width: clamp(48px, 10vw, 100px);
+      height: 3px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #152051 0%, rgba(21, 32, 81, 0.28) 100%);
+    }
+
+    .callout {
+      border-left: 4px solid #D80C2B;
+      background: rgba(216, 12, 43, 0.06);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="mx-auto flex min-h-screen min-h-[100svh] w-full max-w-3xl flex-col px-5 py-8 sm:px-8 sm:py-12">
+    <header class="flex items-center gap-4">
+      <a href="/" class="flex items-center gap-3 transition hover:opacity-90" aria-label="BlueBaħar home">
+        <img
+          src="/logo.png"
+          alt="BlueBaħar"
+          class="h-12 w-12 shrink-0 select-none rounded-2xl bg-paper/30 p-1 shadow-glow ring-1 ring-paper/40 sm:h-14 sm:w-14"
+          draggable="false"
+        />
+        <span class="select-none font-brand text-xl font-semibold text-paper drop-shadow-sm sm:text-2xl">
+          BlueBaħar <small>{{version}}</small>
+        </span>
+      </a>
+    </header>
+
+    <main class="doc mt-8 flex-1 rounded-2xl px-6 py-8 sm:mt-12 sm:rounded-3xl sm:px-12 sm:py-12">
+      <p class="text-xs font-medium uppercase tracking-[0.18em] text-ink/55">Legal</p>
+      <h1 class="mt-2 font-display text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+        Terms of Service
+      </h1>
+      <div class="accent-line mt-5"></div>
+      <p class="mt-4 text-sm text-ink/60">Last updated: 5 May 2026</p>
+
+      <div class="callout mt-8 rounded-r-xl px-5 py-4">
+        <p class="font-display text-sm font-semibold uppercase tracking-wide text-bad">
+          Safety notice
+        </p>
+        <p class="mt-2 text-ink/85">
+          BlueBaħar is an informational tool. It is <strong>not</strong> a substitute for
+          official nautical charts, certified navigation equipment, or guidance from the
+          competent maritime authorities. Never use BlueBaħar as your sole means of
+          navigation or safety decisions at sea.
+        </p>
+      </div>
+
+      <section class="mt-8 space-y-3">
+        <h2 class="text-xl text-ink sm:text-2xl">1. Who we are</h2>
+        <p class="text-ink/80">
+          BlueBaħar (the "app") is operated by Impossible Labs ("we", "us"). By installing
+          or using the app you agree to these Terms of Service. If you do not agree, please
+          do not use the app.
+        </p>
+      </section>
+
+      <section class="mt-8 space-y-3">
+        <h2 class="text-xl text-ink sm:text-2xl">2. What the app does</h2>
+        <p class="text-ink/80">
+          BlueBaħar is a free, read-only viewer that displays publicly available maritime
+          information about Maltese waters — including notices to mariners, hazards,
+          restricted and protected zones, and weather forecasts — on an interactive map.
+        </p>
+        <p class="text-ink/80">
+          The information is sourced from open data published by the Government of Malta
+          and its agencies. The app fetches this data through our backend; we do not
+          author or verify the underlying content.
+        </p>
+      </section>
+
+      <section class="mt-8 space-y-3">
+        <h2 class="text-xl text-ink sm:text-2xl">3. No warranty on information</h2>
+        <p class="text-ink/80">
+          We make reasonable efforts to keep the information up to date, but we provide it
+          on an "as is" and "as available" basis, without warranties of any kind. We do not
+          guarantee that the data is accurate, complete, current, or fit for any particular
+          purpose. Source datasets may be delayed, withdrawn, or contain errors that
+          propagate to the app.
+        </p>
+        <p class="text-ink/80">
+          For authoritative information, always consult the latest official notices and
+          publications issued by the Maltese maritime authorities and use approved
+          navigational equipment.
+        </p>
+      </section>
+
+      <section class="mt-8 space-y-3">
+        <h2 class="text-xl text-ink sm:text-2xl">4. Acceptable use</h2>
+        <p class="text-ink/80">You agree not to:</p>
+        <ul class="list-disc space-y-1.5 pl-6 text-ink/80">
+          <li>use the app or its backend in any way that violates applicable law;</li>
+          <li>attempt to disrupt, overload, probe, or reverse-engineer our service;</li>
+          <li>scrape or rebroadcast the data through the app in a way that misrepresents its source or freshness;</li>
+          <li>use the app in a manner that endangers people, vessels, property, or the marine environment.</li>
+        </ul>
+      </section>
+
+      <section class="mt-8 space-y-3">
+        <h2 class="text-xl text-ink sm:text-2xl">5. Intellectual property</h2>
+        <p class="text-ink/80">
+          The app's name, logo, design, and software are owned by Impossible Labs. The
+          underlying maritime data remains the property of its respective publishers and is
+          made available under the terms set out by those publishers.
+        </p>
+      </section>
+
+      <section class="mt-8 space-y-3">
+        <h2 class="text-xl text-ink sm:text-2xl">6. Privacy</h2>
+        <p class="text-ink/80">
+          Use of the app is also governed by our
+          <a href="/privacy">Privacy Policy</a>. The app does not collect personal data,
+          and your device location, when permitted, is used only locally to render your
+          position on the map.
+        </p>
+      </section>
+
+      <section class="mt-8 space-y-3">
+        <h2 class="text-xl text-ink sm:text-2xl">7. Limitation of liability</h2>
+        <p class="text-ink/80">
+          To the maximum extent permitted by law, Impossible Labs and its contributors
+          shall not be liable for any direct, indirect, incidental, special, consequential,
+          or exemplary damages arising out of or in connection with your use of, or
+          inability to use, the app — including any decisions taken on the basis of
+          information shown in the app.
+        </p>
+      </section>
+
+      <section class="mt-8 space-y-3">
+        <h2 class="text-xl text-ink sm:text-2xl">8. Service availability</h2>
+        <p class="text-ink/80">
+          The app and the backend are provided free of charge and may be modified,
+          suspended, or discontinued at any time, with or without notice.
+        </p>
+      </section>
+
+      <section class="mt-8 space-y-3">
+        <h2 class="text-xl text-ink sm:text-2xl">9. Changes to these terms</h2>
+        <p class="text-ink/80">
+          We may update these terms occasionally. Continued use of the app after changes
+          take effect constitutes acceptance of the updated terms. The "last updated" date
+          above reflects the current version.
+        </p>
+      </section>
+
+      <section class="mt-8 space-y-3">
+        <h2 class="text-xl text-ink sm:text-2xl">10. Governing law</h2>
+        <p class="text-ink/80">
+          These terms are governed by the laws of Malta. Any dispute arising from the use
+          of the app shall be subject to the non-exclusive jurisdiction of the courts of
+          Malta.
+        </p>
+      </section>
+
+      <section class="mt-8 space-y-3">
+        <h2 class="text-xl text-ink sm:text-2xl">11. Contact</h2>
+        <p class="text-ink/80">
+          Questions about these terms? Write to
+          <a href="#" class="text-ink/80 underline hover:no-underline">info _AT_ bluebahar _DOT_ com</a>.
+        </p>
+      </section>
+    </main>
+
+    <footer class="mt-8 flex flex-col items-center gap-2 text-sm text-paper/85 sm:flex-row sm:justify-between">
+      <a href="/" class="font-display font-medium underline-offset-4 hover:underline">← Back to BlueBaħar</a>
+      <div class="flex items-center gap-4">
+        <a href="/privacy" class="font-display font-medium underline-offset-4 hover:underline">Privacy Policy</a>
+        <span class="text-paper/65">© 2026 Impossible Labs</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

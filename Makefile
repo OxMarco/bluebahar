@@ -42,14 +42,15 @@ _migrate:
 
 smoke: ## Check the public production liveness endpoint
 	@set -a; . ./.env; set +a; \
-	for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do \
-		if curl -fsS "https://$$DOMAIN/v1/health/live" >/dev/null; then \
+	for attempt in $$(seq 1 40); do \
+		if curl -fsS "https://$$DOMAIN/v1/health/live" >/dev/null 2>&1; then \
 			echo "Smoke check passed for https://$$DOMAIN/v1/health/live"; \
 			exit 0; \
 		fi; \
 		sleep 3; \
 	done; \
 	echo "Smoke check failed for https://$$DOMAIN/v1/health/live"; \
+	curl -v "https://$$DOMAIN/v1/health/live" || true; \
 	exit 1
 
 logs: ## Tail logs from all services

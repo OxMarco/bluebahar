@@ -44,7 +44,19 @@ export class AppController {
   @Get()
   @Render('index')
   root() {
-    return { message: 'v1' };
+    return { version: 'v1' };
+  }
+
+  @Get('/tos')
+  @Render('tos')
+  tos() {
+    return { version: 'v1' };
+  }
+
+  @Get('/privacy')
+  @Render('privacy')
+  privacy() {
+    return { version: 'v1' };
   }
 
   @Get('/v1')
