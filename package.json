@@ -43,6 +43,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "geojson": "^0.5.0",
+    "hbs": "^4.2.1",
     "helmet": "^8.1.0",
     "impit": "^0.13.1",
     "joi": "^18.1.2",

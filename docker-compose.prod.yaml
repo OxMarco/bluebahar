@@ -81,9 +81,7 @@ services:
   redis:
     image: redis:8.2-alpine
     restart: unless-stopped
-    command: ['redis-server', '--appendonly', 'yes']
-    volumes:
-      - redisdata:/data
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
@@ -119,9 +117,6 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik_letsencrypt:/letsencrypt
-    depends_on:
-      app:
-        condition: service_healthy
     mem_limit: 128m
     cpus: 0.5
     logging: *default-logging
@@ -130,7 +125,6 @@ services:
 
 volumes:
   pgdata:
-  redisdata:
   datasets:
   traefik_letsencrypt:
 

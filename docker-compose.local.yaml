@@ -8,6 +8,8 @@ services:
     volumes:
       # Mount source code for hot-reloading
       - ./src:/app/src:delegated
+      - ./views:/app/views:delegated
+      - ./public:/app/public:delegated
       - ./nest-cli.json:/app/nest-cli.json:ro
       - ./tsconfig.json:/app/tsconfig.json:ro
       - ./tsconfig.build.json:/app/tsconfig.build.json:ro
@@ -39,6 +41,7 @@ services:
 
   redis:
     image: redis:8.2-alpine
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
     ports:
       - '6379:6379'
 

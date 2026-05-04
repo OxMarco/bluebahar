@@ -11,6 +11,7 @@ import {
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
+import { join } from 'node:path';
 import { TypeOrmNotFoundExceptionFilter } from './common/filters/entity-not-found.filter';
 import { AppModule } from './app.module';
 
@@ -47,9 +48,42 @@ async function bootstrap() {
   );
   app.useGlobalInterceptors(new ClassSerializerInterceptor(reflector));
   app.useGlobalFilters(new TypeOrmNotFoundExceptionFilter());
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          'script-src': [
+            "'self'",
+            "'unsafe-inline'",
+            'https://cdn.tailwindcss.com',
+          ],
+          'script-src-elem': [
+            "'self'",
+            "'unsafe-inline'",
+            'https://cdn.tailwindcss.com',
+          ],
+          'style-src': [
+            "'self'",
+            "'unsafe-inline'",
+            'https://fonts.googleapis.com',
+          ],
+          'style-src-elem': [
+            "'self'",
+            "'unsafe-inline'",
+            'https://fonts.googleapis.com',
+          ],
+          'font-src': ["'self'", 'https://fonts.gstatic.com'],
+          'img-src': ["'self'", 'data:'],
+        },
+      },
+    }),
+  );
+  app.useStaticAssets(join(__dirname, '..', 'public'));
+  app.setBaseViewsDir(join(__dirname, '..', 'views'));
+  app.setViewEngine('hbs');
   app.enableShutdownHooks();
-  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+  app.enableVersioning({ type: VersioningType.URI });
   app.enable('trust proxy');
 
   await app.listen(process.env.PORT ?? 3000);

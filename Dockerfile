@@ -6,6 +6,8 @@ COPY package*.json ./
 RUN npm ci --ignore-scripts
 COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY src ./src
+COPY views ./views
+COPY public ./public
 RUN npm run build
 
 FROM ${NODE_IMAGE} AS runtime
@@ -14,6 +16,8 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --from=builder --chown=node:node /app/views ./views
+COPY --from=builder --chown=node:node /app/public ./public
 RUN mkdir -p /app/data/datasets && chown -R node:node /app/data
 USER node
 EXPOSE 3000
