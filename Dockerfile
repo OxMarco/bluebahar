@@ -18,5 +18,5 @@ RUN mkdir -p /app/data/datasets && chown -R node:node /app/data
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
-  CMD node -e "fetch('http://localhost:3000/v1/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://localhost:3000/v1/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "dist/main.js"]

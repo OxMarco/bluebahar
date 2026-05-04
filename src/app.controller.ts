@@ -40,6 +40,11 @@ export class AppController {
     private readonly disk: DiskHealthIndicator,
   ) {}
 
+  @Get('health/live')
+  live() {
+    return { status: 'ok' };
+  }
+
   @Get()
   @HealthCheck()
   check() {
