@@ -1,4 +1,4 @@
-ARG NODE_IMAGE=node:22.11-bookworm-slim
+ARG NODE_IMAGE=node:lts-bookworm-slim
 
 FROM ${NODE_IMAGE} AS builder
 WORKDIR /app

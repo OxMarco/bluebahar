@@ -79,7 +79,7 @@ services:
       - backend
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.2-alpine
     restart: unless-stopped
     command: ['redis-server', '--appendonly', 'yes']
     volumes:
@@ -96,7 +96,7 @@ services:
       - backend
 
   traefik:
-    image: traefik:v3.2
+    image: traefik:v3
     restart: unless-stopped
     ports:
       - '80:80'
