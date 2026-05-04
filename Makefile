@@ -1,11 +1,21 @@
 COMPOSE := docker compose -f docker-compose.prod.yaml
+COMPOSE_DEV := docker compose -f docker-compose.local.yaml
 
-.PHONY: help up down restart deploy build pull logs ps psql redis-cli sh status health prune
+.PHONY: help dev dev-down dev-logs up down restart deploy build pull logs ps psql redis-cli sh status health prune
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
-up: ## Start the stack in the background
+dev: ## Start the local dev stack with hot-reload (foreground)
+	$(COMPOSE_DEV) up
+
+dev-down: ## Stop and remove the local dev stack
+	$(COMPOSE_DEV) down
+
+dev-logs: ## Tail logs from the local dev stack
+	$(COMPOSE_DEV) logs -f --tail=200
+
+up: ## Start the prod stack in the background
 	$(COMPOSE) up -d
 
 down: ## Stop and remove containers (volumes preserved)
