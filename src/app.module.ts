@@ -38,6 +38,7 @@ import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
         password: configService.getOrThrow<string>('DB_PASSWORD'),
         database: configService.getOrThrow<string>('DB_NAME'),
         autoLoadEntities: true,
+        migrations: [`${__dirname}/migrations/*{.ts,.js}`],
         synchronize:
           configService.getOrThrow<string>('NODE_ENV') !== 'production',
       }),
@@ -57,7 +58,7 @@ import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
     CacheModule.registerAsync({
       isGlobal: true,
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
+      useFactory: (configService: ConfigService) => ({
         ttl: configService.getOrThrow<number>('CACHE_TTL'), // milliseconds
       }),
       inject: [ConfigService],

@@ -19,9 +19,15 @@ services:
       PORT: 3000
       DB_HOST: postgres
       DB_PORT: 5432
+      DB_NAME: ${DB_NAME:?DB_NAME required}
+      DB_USERNAME: ${DB_USERNAME:?DB_USERNAME required}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       DATASETS_STORAGE_DIR: /app/data/datasets
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required}
+      CACHE_TTL: ${CACHE_TTL:?CACHE_TTL required}
+      NOTICE_SCRAPE_BATCH_SIZE: ${NOTICE_SCRAPE_BATCH_SIZE:?NOTICE_SCRAPE_BATCH_SIZE required}
     volumes:
       - datasets:/app/data/datasets
     depends_on:
@@ -46,7 +52,7 @@ services:
       - backend
     labels:
       - 'traefik.enable=true'
-      - 'traefik.http.routers.app.rule=Host(`${DOMAIN}`)'
+      - 'traefik.http.routers.app.rule=Host(`${DOMAIN:?DOMAIN required}`)'
       - 'traefik.http.routers.app.entrypoints=websecure'
       - 'traefik.http.routers.app.tls=true'
       - 'traefik.http.routers.app.tls.certresolver=letsencrypt'
@@ -56,9 +62,9 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USERNAME}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:?DB_NAME required}
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -104,7 +110,7 @@ services:
       - '--entrypoints.web.http.redirections.entrypoint.scheme=https'
       - '--entrypoints.websecure.address=:443'
       - '--entrypoints.websecure.http.tls=true'
-      - '--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}'
+      - '--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?ACME_EMAIL required}'
       - '--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json'
       - '--certificatesresolvers.letsencrypt.acme.httpchallenge=true'
       - '--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web'

@@ -15,9 +15,7 @@ import { listNoticeLinks } from './parser/notice-to-mariners';
 import { DATASETS } from './datasets';
 
 @Injectable()
-export class ScraperService
-  implements OnApplicationBootstrap, OnModuleDestroy
-{
+export class ScraperService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(ScraperService.name);
   private readonly noticeBatchSize: number;
 
