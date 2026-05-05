@@ -6,7 +6,7 @@ import { NoticeToMariners } from './entities/notice-to-mariners.entity';
 import { Weather } from './entities/weather.entity';
 import { Dataset } from './entities/dataset.entity';
 import { ScraperProcessor } from './scraper.processor';
-import { BullModule } from '@nestjs/bull';
+import { BullModule } from '@nestjs/bullmq';
 
 @Module({
   imports: [

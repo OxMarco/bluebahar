@@ -1,13 +1,14 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
-import { BullModule } from '@nestjs/bull';
+import { BullModule } from '@nestjs/bullmq';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { TerminusModule } from '@nestjs/terminus';
 import { CacheModule } from '@nestjs/cache-manager';
+import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { configValidationSchema } from './config.schema';
 import { ScraperModule } from './scraper/scraper.module';
 import { MapModule } from './map/map.module';
@@ -48,7 +49,7 @@ import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        redis: {
+        connection: {
           host: configService.getOrThrow<string>('REDIS_HOST'),
           port: configService.getOrThrow<number>('REDIS_PORT'),
         },
@@ -65,10 +66,16 @@ import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
       inject: [ConfigService],
     }),
     TerminusModule.forRoot(),
+    SentryModule.forRoot(),
     ScraperModule,
     MapModule,
   ],
   providers: [
+    // Sentry filter must come first so it captures errors before other filters
+    // respond. The existing TypeOrmNotFoundExceptionFilter (registered via
+    // useGlobalFilters in main.ts) is @Catch(EntityNotFoundError) and still
+    // wins for that specific type — Nest dispatches to the most specific match.
+    { provide: APP_FILTER, useClass: SentryGlobalFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     ImpitHealthIndicator,
   ],

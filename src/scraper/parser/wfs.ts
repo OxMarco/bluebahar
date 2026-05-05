@@ -22,7 +22,9 @@ function normalizeWfsUrl(raw: string): string {
 export async function fetchWfsDataset(
   sourceUrl: string,
 ): Promise<FetchedDataset> {
-  const body = await fetchHtml(normalizeWfsUrl(sourceUrl));
+  const body = await fetchHtml(normalizeWfsUrl(sourceUrl), {
+    timeout: 120_000,
+  });
 
   const parsed = JSON.parse(body) as {
     type?: string;
@@ -31,6 +33,16 @@ export async function fetchWfsDataset(
   if (parsed.type !== 'FeatureCollection' || !Array.isArray(parsed.features)) {
     throw new Error(
       `Expected GeoJSON FeatureCollection from ${sourceUrl}, got type=${parsed.type ?? 'undefined'}`,
+    );
+  }
+
+  // All configured datasets are static reference geographies; a zero-feature
+  // response means the upstream WFS broke or the layer was retired, not
+  // genuinely empty data. Surface it rather than overwriting the on-disk file
+  // with an empty FeatureCollection.
+  if (parsed.features.length === 0) {
+    throw new Error(
+      `WFS endpoint ${sourceUrl} returned an empty FeatureCollection — likely upstream failure`,
     );
   }
 

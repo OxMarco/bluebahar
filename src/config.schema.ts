@@ -27,4 +27,9 @@ export const configValidationSchema = Joi.object({
 
   // Max number of notice-to-mariners PDFs to enqueue per cron iteration
   NOTICE_SCRAPE_BATCH_SIZE: Joi.number().integer().positive().required(),
+
+  // Sentry
+  SENTRY_DSN: Joi.string().uri().optional(),
+  SENTRY_TRACES_SAMPLE_RATE: Joi.number().min(0).max(1).optional(),
+  SENTRY_PROFILES_SAMPLE_RATE: Joi.number().min(0).max(1).optional(),
 });

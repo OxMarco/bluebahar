@@ -86,6 +86,15 @@ function extractPdfLinks(
   const baseUrl = new URL(base);
   const seen = new Map<string, PdfLink>();
 
+  // The listing page must contain ul#noticeslist; if it doesn't, the page
+  // structure changed or we hit a Cloudflare interstitial. Throw rather than
+  // silently returning [] — that masks scrape failures as "nothing new".
+  if ($('ul#noticeslist').length === 0) {
+    throw new Error(
+      `Listing page ${base} has no ul#noticeslist element — likely blocked or page structure changed`,
+    );
+  }
+
   $('ul#noticeslist > li').each((_, li) => {
     if (!isActive($(li).attr('data-expiredon'), now)) return;
 
@@ -382,10 +391,26 @@ export async function listNoticeLinks(): Promise<PdfLink[]> {
   const sourceResults = await Promise.allSettled(SOURCES.map(fetchSource));
 
   const links: PdfLink[] = [];
-  for (const result of sourceResults) {
+  const failures: string[] = [];
+  sourceResults.forEach((result, i) => {
     if (result.status === 'fulfilled') {
       links.push(...result.value);
+    } else {
+      const reason =
+        result.reason instanceof Error
+          ? result.reason.message
+          : String(result.reason);
+      failures.push(`${SOURCES[i]}: ${reason}`);
     }
+  });
+
+  // Partial failure (some sources up, some down) is logged but not fatal.
+  // Total failure means every listing page is unreachable — surface it so
+  // the caller's error handler / alerting can fire.
+  if (failures.length === SOURCES.length) {
+    throw new Error(
+      `All ${SOURCES.length} listing sources failed: ${failures.join(' | ')}`,
+    );
   }
 
   const deduped = new Map<string, PdfLink>();
