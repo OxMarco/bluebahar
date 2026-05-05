@@ -26,7 +26,7 @@ export class NoticeToMariners {
   source!: string;
 
   // Required for kind='facility', optional context for kind='area', absent for 'advisory'.
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ nullable: true })
   locationLabel?: string;
 
   @Column({ type: 'jsonb', default: () => "'[]'" })
@@ -42,6 +42,10 @@ export class NoticeToMariners {
   @Index()
   @Column({ type: 'timestamp', nullable: true })
   activeTo?: Date; // null means "no expiry"
+
+  @Index()
+  @Column({ default: false })
+  needsReview!: boolean;
 
   @CreateDateColumn()
   createdAt!: Date;

@@ -1,7 +1,7 @@
 COMPOSE := docker compose -f docker-compose.prod.yaml
 COMPOSE_DEV := docker compose -f docker-compose.local.yaml
 
-.PHONY: help dev dev-down dev-logs up down restart deploy build migrate _migrate smoke pull logs ps psql redis-cli sh status health prune
+.PHONY: help dev dev-down dev-logs up down restart deploy build smoke pull logs ps psql redis-cli sh status health prune
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -27,18 +27,11 @@ restart: ## Restart all services
 build: ## Rebuild the app image
 	$(COMPOSE) build app
 
-deploy: ## Pull, rebuild app, run migrations, recreate changed services
+deploy: ## Pull, rebuild app, recreate changed services
 	git pull --ff-only
 	$(COMPOSE) build app
-	$(MAKE) _migrate
 	$(COMPOSE) up -d --remove-orphans
 	$(MAKE) smoke
-
-migrate: build _migrate ## Rebuild app image and run production database migrations
-
-_migrate:
-	$(COMPOSE) up -d --wait postgres redis
-	$(COMPOSE) run --rm app npm run migration:run
 
 smoke: ## Check the public production liveness endpoint
 	@set -a; . ./.env; set +a; \

@@ -52,6 +52,24 @@ export class MapController {
     return this.mapService.getNotices(query);
   }
 
+  @Get('notices/review')
+  @ApiOperation({
+    summary: 'List notices to mariners currently in review',
+    description:
+      'Returns a paginated list of notices to mariners that need team review, optionally filtered by kind and active status. Results are ordered by activeFrom descending.',
+  })
+  @ApiOkResponse({
+    description: 'A list of notices to mariners in review.',
+    type: NoticeToMariners,
+    isArray: true,
+  })
+  @ApiUnprocessableEntityResponse({
+    description: 'Invalid query parameters.',
+  })
+  async getNoticesInReview(@Query() query: GetNoticesDto) {
+    return this.mapService.getNotices(query, true);
+  }
+
   @UseInterceptors(CacheInterceptor)
   @Get('weather')
   @ApiOperation({

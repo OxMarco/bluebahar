@@ -17,9 +17,12 @@ export class MapService {
     private readonly datasetRepository: Repository<Dataset>,
   ) {}
 
-  async getNotices(query: GetNoticesDto) {
+  async getNotices(query: GetNoticesDto, needsReview = false) {
     const now = new Date();
+    // needsReview hides notices whose LLM-extracted coordinates failed
+    // geo-sanity checks; they're persisted for manual triage but not surfaced.
     const baseWhere = {
+      needsReview,
       ...(query.kind ? { kind: query.kind } : {}),
     };
 

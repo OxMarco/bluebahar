@@ -38,9 +38,10 @@ import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
         password: configService.getOrThrow<string>('DB_PASSWORD'),
         database: configService.getOrThrow<string>('DB_NAME'),
         autoLoadEntities: true,
-        migrations: [`${__dirname}/migrations/*{.ts,.js}`],
-        synchronize:
-          configService.getOrThrow<string>('NODE_ENV') !== 'production',
+        // Auto-sync schema from entities on boot. Restarts/crashes preserve
+        // data; for breaking entity changes that synchronize can't reconcile,
+        // wipe the postgres volume manually (`docker compose down -v`).
+        synchronize: true,
       }),
       inject: [ConfigService],
     }),

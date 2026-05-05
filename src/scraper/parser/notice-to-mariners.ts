@@ -14,6 +14,9 @@ export interface ParsedNotice {
   activeFrom: Date;
   activeTo?: Date;
   area: { lat: number; long: number; depth?: number; distance?: number }[];
+  // Set when LLM-extracted coordinates fail geo-sanity checks (outside Malta region
+  // or inside Malta land). Flagged notices are persisted but hidden from public getters.
+  needsReview: boolean;
 }
 
 export interface PdfLink {
@@ -117,6 +120,84 @@ async function fetchSource(source: string): Promise<PdfLink[]> {
   return extractPdfLinks(html, source);
 }
 
+// Generous Malta maritime region. Anything outside is almost certainly an LLM
+// error (sign flip, swapped lat/long, decimal-place mistake, DMS miscalc).
+const MALTA_REGION_BBOX = {
+  minLat: 35.5,
+  maxLat: 36.5,
+  minLong: 13.5,
+  maxLong: 15.0,
+} as const;
+
+// Conservative inland polygons (well inside the actual coastline) for Malta and
+// Gozo. Coordinates are [long, lat]. The intent is "obvious land" — coastal
+// points stay in the water bucket so we don't flag valid harbour/wreck notices.
+const MALTA_LAND_POLYGONS: [number, number][][] = [
+  [
+    [14.4, 35.93],
+    [14.49, 35.93],
+    [14.51, 35.89],
+    [14.49, 35.85],
+    [14.42, 35.84],
+    [14.36, 35.86],
+    [14.35, 35.89],
+    [14.36, 35.92],
+    [14.4, 35.93],
+  ],
+  [
+    [14.25, 36.06],
+    [14.3, 36.05],
+    [14.3, 36.03],
+    [14.26, 36.03],
+    [14.23, 36.04],
+    [14.25, 36.06],
+  ],
+];
+
+function pointInRing(
+  lng: number,
+  lat: number,
+  ring: [number, number][],
+): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (
+      yi > lat !== yj > lat &&
+      lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi
+    ) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function validateAreaCoordinates(
+  area: { lat: number; long: number }[],
+): string[] {
+  const errors: string[] = [];
+  for (const { lat, long } of area) {
+    if (
+      lat < MALTA_REGION_BBOX.minLat ||
+      lat > MALTA_REGION_BBOX.maxLat ||
+      long < MALTA_REGION_BBOX.minLong ||
+      long > MALTA_REGION_BBOX.maxLong
+    ) {
+      errors.push(
+        `(${lat}, ${long}) is outside the Malta maritime region — check N/S/E/W signs and that lat/long are not swapped`,
+      );
+      continue;
+    }
+    if (MALTA_LAND_POLYGONS.some((ring) => pointInRing(long, lat, ring))) {
+      errors.push(
+        `(${lat}, ${long}) falls on Maltese land — re-check the source coordinates`,
+      );
+    }
+  }
+  return errors;
+}
+
 // OpenAI structured outputs require every property to appear in `required`;
 // optional fields are modelled as nullable and normalized to `undefined` after parse.
 const PARSED_NOTICE_SCHEMA = {
@@ -179,41 +260,56 @@ const PARSED_NOTICE_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export async function extractNoticeFromPdf(
+type RawParsedNotice = {
+  kind: NoticeKind;
+  title: string;
+  description: string;
+  locationLabel: string | null;
+  publishedAt: string;
+  activeFrom: string;
+  activeTo: string | null;
+  area: {
+    lat: number;
+    long: number;
+    depth: number | null;
+    distance: number | null;
+  }[];
+};
+
+async function callExtractor(
   url: string,
   openai: OpenAI,
-): Promise<ParsedNotice> {
-  const buffer = await fetchBuffer(url);
-  const fileData = `data:application/pdf;base64,${buffer.toString('base64')}`;
-  const filename = `${new URL(url).searchParams.get('fileid') ?? 'notice'}.pdf`;
+  fileData: string,
+  filename: string,
+  retryFeedback?: string,
+): Promise<RawParsedNotice> {
+  const systemPrompt =
+    'You extract structured data from Maltese maritime "Notice to Mariners" PDFs.\n' +
+    'Classify each notice into one of three kinds:\n' +
+    "- 'area': references one or more geographic coordinates (lat/long).\n" +
+    "- 'facility': concerns a named place without coordinates (berth, lock, channel, port).\n" +
+    '- \'advisory\': general guidance with no specific location (e.g. "max speed in harbours is 10 knots").\n' +
+    'For "area" kind, return every coordinate as {lat, long, depth, distance}; ' +
+    "convert DMS (e.g. 35°54'N 14°31'E) to decimal degrees with negative values for S/W; " +
+    'depth must be expressed in metres below sea level; distance is the safety/radius and must be expressed in metres around the coordinate; ' +
+    'use null for depth/distance when not specified. ' +
+    'For "facility" and "advisory" kinds, return an empty area array. ' +
+    'locationLabel is required for "facility", optional for "area", and null for "advisory". ' +
+    'Return ISO8601 dates. activeTo is null when the notice has no expiry date.';
+
+  const userText = retryFeedback
+    ? `Extract the Notice to Mariners data from this PDF. A previous extraction failed validation: ${retryFeedback}. Re-read the PDF carefully — pay attention to N/S/E/W signs, DMS-to-decimal conversion, and that lat and long are not swapped.`
+    : 'Extract the Notice to Mariners data from this PDF.';
 
   const completion = await openai.chat.completions.create({
-    model: 'gpt-5.4-mini',
+    model: 'gpt-5.5',
     messages: [
-      {
-        role: 'system',
-        content:
-          'You extract structured data from Maltese maritime "Notice to Mariners" PDFs.\n' +
-          'Classify each notice into one of three kinds:\n' +
-          "- 'area': references one or more geographic coordinates (lat/long).\n" +
-          "- 'facility': concerns a named place without coordinates (berth, lock, channel, port).\n" +
-          '- \'advisory\': general guidance with no specific location (e.g. "max speed in harbours is 10 knots").\n' +
-          'For "area" kind, return every coordinate as {lat, long, depth, distance}; ' +
-          "convert DMS (e.g. 35°54'N 14°31'E) to decimal degrees with negative values for S/W; " +
-          'depth is metres below sea level; distance is the safety/radius in metres around the coordinate; ' +
-          'use null for depth/distance when not specified. ' +
-          'For "facility" and "advisory" kinds, return an empty area array. ' +
-          'locationLabel is required for "facility", optional for "area", and null for "advisory". ' +
-          'Return ISO 8601 dates. activeTo is null when the notice has no expiry date.',
-      },
+      { role: 'system', content: systemPrompt },
       {
         role: 'user',
         content: [
           { type: 'file', file: { filename, file_data: fileData } },
-          {
-            type: 'text',
-            text: 'Extract the Notice to Mariners data from this PDF.',
-          },
+          { type: 'text', text: userText },
         ],
       },
     ],
@@ -229,21 +325,32 @@ export async function extractNoticeFromPdf(
 
   const raw = completion.choices[0]?.message?.content;
   if (!raw) throw new Error(`Empty LLM response for ${url}`);
-  const parsed = JSON.parse(raw) as {
-    kind: NoticeKind;
-    title: string;
-    description: string;
-    locationLabel: string | null;
-    publishedAt: string;
-    activeFrom: string;
-    activeTo: string | null;
-    area: {
-      lat: number;
-      long: number;
-      depth: number | null;
-      distance: number | null;
-    }[];
-  };
+  return JSON.parse(raw) as RawParsedNotice;
+}
+
+export async function extractNoticeFromPdf(
+  url: string,
+  openai: OpenAI,
+): Promise<ParsedNotice> {
+  const buffer = await fetchBuffer(url);
+  const fileData = `data:application/pdf;base64,${buffer.toString('base64')}`;
+  const filename = `${new URL(url).searchParams.get('fileid') ?? 'notice'}.pdf`;
+
+  let parsed = await callExtractor(url, openai, fileData, filename);
+  let errors = validateAreaCoordinates(parsed.area);
+
+  // One bounded retry — repeated retries don't tend to recover; beyond a single
+  // pass we route the notice to manual review instead of looping.
+  if (errors.length > 0) {
+    parsed = await callExtractor(
+      url,
+      openai,
+      fileData,
+      filename,
+      errors.join('; '),
+    );
+    errors = validateAreaCoordinates(parsed.area);
+  }
 
   return {
     kind: parsed.kind,
@@ -262,6 +369,7 @@ export async function extractNoticeFromPdf(
       ...(a.depth !== null && { depth: a.depth }),
       ...(a.distance !== null && { distance: a.distance }),
     })),
+    needsReview: errors.length > 0,
   };
 }
 
