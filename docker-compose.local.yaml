@@ -13,8 +13,8 @@ services:
       - ./nest-cli.json:/app/nest-cli.json:ro
       - ./tsconfig.json:/app/tsconfig.json:ro
       - ./tsconfig.build.json:/app/tsconfig.build.json:ro
-      # Persist scraped WFS datasets across container restarts
-      - datasets:/app/data/datasets
+      # GeoJSON datasets — bind-mounted so edits take effect without rebuild.
+      - ./data:/app/data:delegated
     command: npm run start:dev
     env_file:
       - .env
@@ -23,7 +23,6 @@ services:
       DB_HOST: postgres
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      DATASETS_STORAGE_DIR: /app/data/datasets
     depends_on:
       - postgres
       - redis
@@ -47,4 +46,3 @@ services:
 
 volumes:
   pgdata:
-  datasets:

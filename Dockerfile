@@ -18,7 +18,7 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=builder --chown=node:node /app/dist ./dist
 COPY --from=builder --chown=node:node /app/views ./views
 COPY --from=builder --chown=node:node /app/public ./public
-RUN mkdir -p /app/data/datasets && chown -R node:node /app/data
+COPY --chown=node:node data ./data
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \

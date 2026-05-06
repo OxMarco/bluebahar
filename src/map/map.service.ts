@@ -2,19 +2,19 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
-import { Weather } from '../scraper/entities/weather.entity';
-import { Dataset } from '../scraper/entities/dataset.entity';
 import { GetNoticesDto } from './dto/get-notices.dto';
+import {
+  DatasetCatalogService,
+  type DatasetEntry,
+  type DatasetMetadata,
+} from './dataset-catalog.service';
 
 @Injectable()
 export class MapService {
   constructor(
     @InjectRepository(NoticeToMariners)
     private readonly noticeRepository: Repository<NoticeToMariners>,
-    @InjectRepository(Weather)
-    private readonly weatherRepository: Repository<Weather>,
-    @InjectRepository(Dataset)
-    private readonly datasetRepository: Repository<Dataset>,
+    private readonly datasets: DatasetCatalogService,
   ) {}
 
   async getNotices(query: GetNoticesDto, needsReview = false) {
@@ -49,30 +49,11 @@ export class MapService {
     });
   }
 
-  async getWeather() {
-    return this.weatherRepository.findOne({
-      where: {},
-      order: { publishTime: 'DESC' },
-    });
+  listDatasets(): DatasetMetadata[] {
+    return this.datasets.list();
   }
 
-  async listDatasets() {
-    return this.datasetRepository.find({
-      select: {
-        key: true,
-        name: true,
-        sourceUrl: true,
-        featureCount: true,
-        byteSize: true,
-        sha256: true,
-        fetchedAt: true,
-        updatedAt: true,
-      },
-      order: { name: 'ASC' },
-    });
-  }
-
-  async getDataset(key: string) {
-    return this.datasetRepository.findOne({ where: { key } });
+  getDataset(key: string): DatasetEntry | undefined {
+    return this.datasets.get(key);
   }
 }

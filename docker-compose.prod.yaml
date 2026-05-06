@@ -24,12 +24,9 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      DATASETS_STORAGE_DIR: /app/data/datasets
       OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required}
       CACHE_TTL: ${CACHE_TTL:?CACHE_TTL required}
       NOTICE_SCRAPE_BATCH_SIZE: ${NOTICE_SCRAPE_BATCH_SIZE:?NOTICE_SCRAPE_BATCH_SIZE required}
-    volumes:
-      - datasets:/app/data/datasets
     depends_on:
       postgres:
         condition: service_healthy
@@ -125,7 +122,6 @@ services:
 
 volumes:
   pgdata:
-  datasets:
   traefik_letsencrypt:
 
 networks:

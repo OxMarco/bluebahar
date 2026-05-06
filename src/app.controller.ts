@@ -9,19 +9,13 @@ import {
   TypeOrmHealthIndicator,
 } from '@nestjs/terminus';
 import { createConnection } from 'node:net';
-import { DATASETS } from './scraper/datasets';
-import { WEATHER_URL } from './scraper/parser/weather';
 import { SOURCES as NOTICE_SOURCES } from './scraper/parser/notice-to-mariners';
 import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
 
 const SCRAPER_PING_URLS = (() => {
   const seenOrigin = new Set<string>();
   const urls: string[] = [];
-  for (const url of [
-    ...DATASETS.map((d) => d.url),
-    WEATHER_URL,
-    ...NOTICE_SOURCES,
-  ]) {
+  for (const url of NOTICE_SOURCES) {
     const origin = new URL(url).origin;
     if (seenOrigin.has(origin)) continue;
     seenOrigin.add(origin);

@@ -22,9 +22,6 @@ export const configValidationSchema = Joi.object({
   // Cache expiration time in milliseconds
   CACHE_TTL: Joi.number().positive().required(),
 
-  // Filesystem directory where WFS dataset GeoJSON files are written
-  DATASETS_STORAGE_DIR: Joi.string().required(),
-
   // Max number of notice-to-mariners PDFs to enqueue per cron iteration
   NOTICE_SCRAPE_BATCH_SIZE: Joi.number().integer().positive().required(),
 

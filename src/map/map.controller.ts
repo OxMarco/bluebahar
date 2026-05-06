@@ -21,9 +21,8 @@ import { resolve } from 'node:path';
 import type { Response } from 'express';
 import { MapService } from './map.service';
 import { GetNoticesDto } from './dto/get-notices.dto';
+import { DatasetDto } from './dto/dataset.dto';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
-import { Weather } from '../scraper/entities/weather.entity';
-import { Dataset } from '../scraper/entities/dataset.entity';
 
 @ApiTags('Map')
 @Controller({
@@ -71,33 +70,18 @@ export class MapController {
   }
 
   @UseInterceptors(CacheInterceptor)
-  @Get('weather')
-  @ApiOperation({
-    summary: 'Get latest weather report',
-    description:
-      'Returns the most recently published weather report, or null if none has been ingested yet.',
-  })
-  @ApiOkResponse({
-    description: 'The latest weather report.',
-    type: Weather,
-  })
-  async getWeather() {
-    return this.mapService.getWeather();
-  }
-
-  @UseInterceptors(CacheInterceptor)
   @Get('datasets')
   @ApiOperation({
     summary: 'List available GeoJSON datasets',
     description:
-      'Returns metadata for every available dataset (key, name, source URL, feature count, byte size, sha256, fetch/update timestamps). Use the key with GET /map/datasets/:key to download the GeoJSON file.',
+      'Returns metadata for every available dataset (key, name, source URL, feature count, byte size, sha256). Use the key with GET /map/datasets/:key to download the GeoJSON file.',
   })
   @ApiOkResponse({
     description: 'Metadata for every available dataset.',
-    type: Dataset,
+    type: DatasetDto,
     isArray: true,
   })
-  async listDatasets() {
+  listDatasets() {
     return this.mapService.listDatasets();
   }
 
@@ -122,8 +106,8 @@ export class MapController {
     },
   })
   @ApiNotFoundResponse({ description: 'No dataset exists for the given key.' })
-  async getDataset(@Param('key') key: string, @Res() res: Response) {
-    const dataset = await this.mapService.getDataset(key);
+  getDataset(@Param('key') key: string, @Res() res: Response) {
+    const dataset = this.mapService.getDataset(key);
     if (!dataset) throw new NotFoundException(`Unknown dataset: ${key}`);
 
     res.type('application/geo+json');
