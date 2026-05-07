@@ -1,5 +1,4 @@
 import { Controller, Get, Render } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
   DiskHealthIndicator,
   HealthCheck,
@@ -8,8 +7,8 @@ import {
   MemoryHealthIndicator,
   TypeOrmHealthIndicator,
 } from '@nestjs/terminus';
-import { createConnection } from 'node:net';
 import { SOURCES as NOTICE_SOURCES } from './scraper/parser/notice-to-mariners';
+import { ScraperService } from './scraper/scraper.service';
 import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
 
 const SCRAPER_PING_URLS = (() => {
@@ -31,8 +30,8 @@ export class AppController {
     private memory: MemoryHealthIndicator,
     private db: TypeOrmHealthIndicator,
     private http: ImpitHealthIndicator,
-    private config: ConfigService,
     private readonly disk: DiskHealthIndicator,
+    private readonly scraper: ScraperService,
   ) {}
 
   @Get()
@@ -104,40 +103,17 @@ export class AppController {
     ]);
   }
 
-  private pingRedis(): Promise<HealthIndicatorResult> {
-    const host = this.config.getOrThrow<string>('REDIS_HOST');
-    const port = Number(this.config.getOrThrow<string>('REDIS_PORT'));
-
-    return new Promise((resolve) => {
-      const socket = createConnection({ host, port });
-      let settled = false;
-
-      const done = (
-        status: 'up' | 'down',
-        details: Record<string, unknown> = {},
-      ) => {
-        if (settled) return;
-        settled = true;
-        socket.destroy();
-        resolve({ redis: { status, ...details } });
+  private async pingRedis(): Promise<HealthIndicatorResult> {
+    try {
+      const ok = await this.scraper.pingRedis();
+      return { redis: { status: ok ? 'up' : 'down' } };
+    } catch (err) {
+      return {
+        redis: {
+          status: 'down',
+          message: err instanceof Error ? err.message : String(err),
+        },
       };
-
-      socket.setTimeout(2000, () =>
-        done('down', { message: 'Redis PING timed out' }),
-      );
-      socket.once('connect', () => socket.write('*1\r\n$4\r\nPING\r\n'));
-      socket.once('data', (chunk) => {
-        const response = chunk.toString('utf8').trim();
-        if (response.startsWith('+PONG')) {
-          done('up');
-          return;
-        }
-        done('down', { message: `Unexpected Redis response: ${response}` });
-      });
-      socket.once('error', (err) => done('down', { message: err.message }));
-      socket.once('end', () =>
-        done('down', { message: 'Redis connection closed before PONG' }),
-      );
-    });
+    }
   }
 }

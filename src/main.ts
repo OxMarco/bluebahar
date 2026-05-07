@@ -20,7 +20,6 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
     cors: true,
-    bufferLogs: false,
   });
   const config = new DocumentBuilder()
     .setTitle('Docs')
@@ -85,7 +84,9 @@ async function bootstrap() {
   app.setViewEngine('hbs');
   app.enableShutdownHooks();
   app.enableVersioning({ type: VersioningType.URI });
-  app.enable('trust proxy');
+  // One hop: Traefik. Trusting all proxies would let clients spoof
+  // X-Forwarded-For and bypass the throttler, which keys on req.ip.
+  app.set('trust proxy', 1);
 
   await app.listen(process.env.PORT ?? 3000);
 }

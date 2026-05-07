@@ -56,8 +56,7 @@ export interface OutlineRecord {
   pageEnd: number;
 }
 
-// Cheap & fast model — outline is a comprehension task, not deep reasoning.
-const MODEL = 'gpt-5.4-mini';
+const MODEL = 'gpt-5.5';
 
 const RECORD_SCHEMA = {
   type: 'object',

@@ -53,7 +53,7 @@ export class MapService {
     return this.datasets.list();
   }
 
-  getDataset(key: string): DatasetEntry | undefined {
-    return this.datasets.get(key);
+  requireDataset(key: string): DatasetEntry {
+    return this.datasets.requireEntry(key);
   }
 }

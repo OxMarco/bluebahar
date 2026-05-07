@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  OnApplicationBootstrap,
-  OnModuleDestroy,
-} from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -15,7 +10,7 @@ import { NoticeToMariners } from './entities/notice-to-mariners.entity';
 import { listNoticeLinks } from './parser/notice-to-mariners';
 
 @Injectable()
-export class ScraperService implements OnApplicationBootstrap, OnModuleDestroy {
+export class ScraperService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ScraperService.name);
   private readonly noticeBatchSize: number;
 
@@ -42,6 +37,13 @@ export class ScraperService implements OnApplicationBootstrap, OnModuleDestroy {
     }
   }
 
+  // Exposed so health checks can reuse BullMQ's Redis connection rather than
+  // opening a separate socket.
+  async pingRedis(): Promise<boolean> {
+    const client = await this.queue.client;
+    return (await client.ping()) === 'PONG';
+  }
+
   // @nestjs/schedule logs unhandled cron errors but does not propagate them to
   // Sentry's global filter. Wrap each cron operation so failures reach Sentry
   // regardless of caller (cron tick or bootstrap).
@@ -52,15 +54,6 @@ export class ScraperService implements OnApplicationBootstrap, OnModuleDestroy {
       Sentry.captureException(err, { tags: { scraper: name } });
       throw err;
     }
-  }
-
-  async onModuleDestroy() {
-    this.logger.log('Shutdown: pausing queue; worker drains active jobs...');
-    // BullMQ queue.pause() stops new job pickup globally. The worker's active
-    // jobs continue; @nestjs/bullmq closes the worker on Nest shutdown which
-    // waits for them to finish.
-    await this.queue.pause();
-    this.logger.log('Scraper queue paused');
   }
 
   @Cron(CronExpression.EVERY_12_HOURS)

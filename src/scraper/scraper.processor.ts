@@ -66,7 +66,7 @@ export class ScraperProcessor extends WorkerHost {
     // A single PDF may yield multiple records (e.g. a VTS notice listing
     // several bunkering areas). Single-statement insert keeps it atomic —
     // partial inserts on retry would collide with unique(source, subKey).
-    await this.noticeRepository.insert(parsed.map((p) => ({ ...p })));
+    await this.noticeRepository.insert(parsed);
 
     // Records that failed geo-sanity / gazetteer lookup are persisted (hidden
     // from public getters) so a human can review them, but we still want a

@@ -1,6 +1,7 @@
 import {
   Injectable,
   Logger,
+  NotFoundException,
   OnApplicationBootstrap,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -59,20 +60,18 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  get(key: string): DatasetEntry | undefined {
-    return this.entries.get(key);
-  }
-
-  requireFilePath(key: string): string {
+  // Resolves to a usable file path or throws an HTTP-typed exception. Splits
+  // "unknown key" (404) from "definition exists but failed to load at boot"
+  // (503) so callers can tell a typo from a server-side problem.
+  requireEntry(key: string): DatasetEntry {
     const entry = this.entries.get(key);
-    if (entry) return entry.filePath;
+    if (entry) return entry;
     if (DATASETS.some((d) => d.key === key)) {
-      // Definition exists but the file failed to load at boot.
       throw new ServiceUnavailableException(
         `Dataset "${key}" is unavailable; check server logs.`,
       );
     }
-    throw new Error(`Unknown dataset: ${key}`);
+    throw new NotFoundException(`Unknown dataset: ${key}`);
   }
 
   private async loadEntry(

@@ -25,7 +25,7 @@ import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
-        limit: 100,
+        limit: 20,
       },
     ]),
     ScheduleModule.forRoot(),

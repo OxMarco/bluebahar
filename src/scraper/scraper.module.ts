@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { HttpModule } from '@nestjs/axios';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScraperService } from './scraper.service';
 import { NoticeToMariners } from './entities/notice-to-mariners.entity';
@@ -9,7 +8,6 @@ import { BullModule } from '@nestjs/bullmq';
 @Module({
   imports: [
     TypeOrmModule.forFeature([NoticeToMariners]),
-    HttpModule.register({ timeout: 15000, maxRedirects: 5 }),
     BullModule.registerQueue({
       name: 'scraper',
       defaultJobOptions: {

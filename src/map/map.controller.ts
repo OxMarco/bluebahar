@@ -1,7 +1,6 @@
 import {
   Controller,
   Get,
-  NotFoundException,
   Param,
   Query,
   Res,
@@ -13,11 +12,11 @@ import {
   ApiOperation,
   ApiOkResponse,
   ApiNotFoundResponse,
+  ApiServiceUnavailableResponse,
   ApiUnprocessableEntityResponse,
   ApiParam,
   ApiProduces,
 } from '@nestjs/swagger';
-import { resolve } from 'node:path';
 import type { Response } from 'express';
 import { MapService } from './map.service';
 import { GetNoticesDto } from './dto/get-notices.dto';
@@ -106,12 +105,13 @@ export class MapController {
     },
   })
   @ApiNotFoundResponse({ description: 'No dataset exists for the given key.' })
+  @ApiServiceUnavailableResponse({
+    description: 'Dataset is configured but failed to load at startup.',
+  })
   getDataset(@Param('key') key: string, @Res() res: Response) {
-    const dataset = this.mapService.getDataset(key);
-    if (!dataset) throw new NotFoundException(`Unknown dataset: ${key}`);
-
+    const dataset = this.mapService.requireDataset(key);
     res.type('application/geo+json');
     res.set('Cache-Control', 'public, max-age=3600');
-    res.sendFile(resolve(dataset.filePath), { lastModified: true });
+    res.sendFile(dataset.filePath, { lastModified: true });
   }
 }

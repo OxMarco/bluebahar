@@ -110,12 +110,13 @@ const ENTRIES: NamedEntry[] = [
   },
   {
     names: ['Cirkewwa', 'Ċirkewwa', 'Cirkewwa Harbour'],
-    entry: { kind: 'point', lat: 35.9855, long: 14.3315, distance: 250 },
+    entry: { kind: 'point', lat: 36.0118868, long: 14.3369304, distance: 1000 },
   },
   {
     names: ['Comino', 'Kemmuna', 'Blue Lagoon'],
     entry: { kind: 'point', lat: 36.0125, long: 14.3265, distance: 600 },
   },
+  /////
   {
     names: [
       "St Paul's Bay",
@@ -123,43 +124,35 @@ const ENTRIES: NamedEntry[] = [
       'San Pawl il-Bahar',
       'St Pauls Bay',
     ],
-    entry: { kind: 'point', lat: 35.9495, long: 14.4035, distance: 1000 },
+    entry: { kind: 'point', lat: 35.9480742, long: 14.3973929, distance: 500 },
   },
   {
     names: ['Salina Bay', 'Salina'],
-    entry: { kind: 'point', lat: 35.9425, long: 14.4185, distance: 500 },
+    entry: { kind: 'point', lat: 35.9456238, long: 14.4184239, distance: 500 },
   },
   {
     names: ['Mellieha Bay', 'Mellieħa Bay', 'Ghadira Bay', 'Għadira Bay'],
-    entry: { kind: 'point', lat: 35.9655, long: 14.3625, distance: 700 },
+    entry: { kind: 'point', lat: 35.9700802, long: 14.3503368, distance: 500 },
   },
   {
     names: ['Xemxija Bay', 'Xemxija'],
-    entry: { kind: 'point', lat: 35.9505, long: 14.3895, distance: 500 },
+    entry: { kind: 'point', lat: 35.9482217, long: 14.387934, distance: 500 },
   },
   {
     names: ['Gozo Channel', 'Comino Channel', 'Channel between Malta and Gozo'],
-    entry: {
-      kind: 'polygon',
-      points: [
-        { lat: 36.0165, long: 14.2745 },
-        { lat: 35.9715, long: 14.3185 },
-        { lat: 36.0315, long: 14.3345 },
-        { lat: 35.9985, long: 14.3675 },
-      ],
-    },
+    entry: { kind: 'point', lat: 36.00076, long: 14.31854, distance: 1000 },
   },
   {
     names: ['Xlendi Bay', 'Xlendi'],
-    entry: { kind: 'point', lat: 36.0285, long: 14.2155, distance: 250 },
+    entry: { kind: 'point', lat: 36.0298848, long: 14.2161926, distance: 500 },
   },
   {
     names: ['Marsalforn', 'Marsalforn Bay'],
-    entry: { kind: 'point', lat: 36.0735, long: 14.2585, distance: 350 },
+    entry: { kind: 'point', lat: 36.0712984, long: 14.2595701, distance: 500 },
   },
   {
     names: ['Dwejra', 'Dwejra Bay'],
-    entry: { kind: 'point', lat: 36.0485, long: 14.1885, distance: 250 },
+    entry: { kind: 'point', lat: 36.0467778, long: 14.1912207, distance: 500 },
   },
 ];
 
