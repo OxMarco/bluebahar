@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
 import { GetNoticesDto } from './dto/get-notices.dto';
+import { NoticeDto } from './dto/notice.dto';
+import { toNoticeDto } from './notice-serializer';
 import {
   DatasetCatalogService,
   type DatasetEntry,
@@ -17,7 +19,10 @@ export class MapService {
     private readonly datasets: DatasetCatalogService,
   ) {}
 
-  async getNotices(query: GetNoticesDto, needsReview = false) {
+  async getNotices(
+    query: GetNoticesDto,
+    needsReview = false,
+  ): Promise<NoticeDto[]> {
     const now = new Date();
     // needsReview hides notices whose LLM-extracted coordinates failed
     // geo-sanity checks; they're persisted for manual triage but not surfaced.
@@ -41,12 +46,13 @@ export class MapService {
         ]
       : baseWhere;
 
-    return this.noticeRepository.find({
+    const entities = await this.noticeRepository.find({
       where,
       order: { activeFrom: 'DESC' },
       take: query.limit,
       skip: query.offset,
     });
+    return entities.map(toNoticeDto);
   }
 
   listDatasets(): DatasetMetadata[] {

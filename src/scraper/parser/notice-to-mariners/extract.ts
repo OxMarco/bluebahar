@@ -48,15 +48,14 @@ export interface ParsedNotice {
   activeFrom: Date;
   activeTo?: Date;
   // Safety berth radius from the hazard, in metres. Top-level (one notice =
-  // one safety distance); the polygon's vertices in `area` carry only the
-  // geometry. Absent when the notice doesn't specify one.
+  // one safety distance); the polygon's vertices carry only the geometry.
+  // Absent when the notice doesn't specify one.
   distance?: number;
   // Depth of the hazard itself in metres (e.g. wreck depth). Absent when
   // not stated.
   depth?: number;
-  // Legacy flattened geometry. New consumers should prefer `areas`, which
-  // preserves separate polygons/lines inside one notice.
-  area: NoticePoint[];
+  // Distinct geographic parts. The API serializer renders these into one
+  // GeoJSON geometry (or GeometryCollection) per notice.
   areas: NoticeGeometryPart[];
   // Set when:
   //   - 'area' record had no usable coordinates after regex extraction
@@ -170,7 +169,6 @@ function assignCoordsToRecords(
 }
 
 interface BuiltArea {
-  area: NoticePoint[];
   areas: NoticeGeometryPart[];
   // Defaulted from the gazetteer for facility points when the LLM didn't
   // extract a safety distance — gives the map something sensible to render
@@ -326,7 +324,7 @@ function buildArea(record: OutlineRecord, coords: CoordHit[]): BuiltArea {
   const reviewReasons: string[] = [];
 
   if (record.kind === NoticeKind.ADVISORY) {
-    return { area: [], areas: [], reviewReasons };
+    return { areas: [], reviewReasons };
   }
 
   if (record.kind === NoticeKind.AREA) {
@@ -334,11 +332,10 @@ function buildArea(record: OutlineRecord, coords: CoordHit[]): BuiltArea {
       reviewReasons.push(
         `kind='area' but no coordinates were extracted from the PDF for this section`,
       );
-      return { area: [], areas: [], reviewReasons };
+      return { areas: [], reviewReasons };
     }
     const areas = buildGeometryParts(record, coords, reviewReasons);
-    const area = flattenUniqueCoords(coords);
-    reviewReasons.push(...validateAreaCoordinates(area));
+    reviewReasons.push(...validateAreaCoordinates(flattenUniqueCoords(coords)));
     // Anomaly check: a single geometry part with this many coords is almost
     // certainly multiple distinct regions that the grouping step collapsed.
     for (const part of areas.filter((p) => p.points.length > 30)) {
@@ -346,36 +343,36 @@ function buildArea(record: OutlineRecord, coords: CoordHit[]): BuiltArea {
         `geometry part '${part.label}' has ${part.points.length} coordinates — likely multiple regions merged into one part`,
       );
     }
-    return { area, areas, reviewReasons };
+    return { areas, reviewReasons };
   }
 
   // kind === 'facility' — resolve via gazetteer.
   const label = record.locationLabel?.trim();
   if (!label) {
     reviewReasons.push(`kind='facility' without a locationLabel`);
-    return { area: [], areas: [], reviewReasons };
+    return { areas: [], reviewReasons };
   }
   const entry = lookupPlace(label);
   if (!entry) {
     reviewReasons.push(
       `locationLabel '${label}' not found in gazetteer — add an entry to gazetteer.ts`,
     );
-    return { area: [], areas: [], reviewReasons };
+    return { areas: [], reviewReasons };
   }
-  const area = entryToArea(entry);
+  const points = entryToArea(entry);
   const areas: NoticeGeometryPart[] = [
     {
       label,
       geometryType: entry.kind === 'point' ? 'point' : 'polygon',
-      points: area,
+      points,
     },
   ];
-  reviewReasons.push(...validateAreaCoordinates(area));
+  reviewReasons.push(...validateAreaCoordinates(points));
   // Point gazetteer entries carry a default rendering radius so single-coord
   // facilities have something to draw on the map even when the notice didn't
   // state a safety distance.
   const fallbackDistance = entry.kind === 'point' ? entry.distance : undefined;
-  return { area, areas, fallbackDistance, reviewReasons };
+  return { areas, fallbackDistance, reviewReasons };
 }
 
 function finalize(
@@ -383,10 +380,7 @@ function finalize(
   record: OutlineRecord,
   coords: CoordHit[],
 ): ParsedNotice {
-  const { area, areas, fallbackDistance, reviewReasons } = buildArea(
-    record,
-    coords,
-  );
+  const { areas, fallbackDistance, reviewReasons } = buildArea(record, coords);
 
   return {
     kind: record.kind,
@@ -406,7 +400,6 @@ function finalize(
       distance: record.distance ?? fallbackDistance,
     }),
     ...(record.depth !== null && { depth: record.depth }),
-    area,
     areas,
     needsReview: reviewReasons.length > 0,
   };

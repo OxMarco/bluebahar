@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   Param,
   Query,
   Res,
@@ -21,7 +22,7 @@ import type { Response } from 'express';
 import { MapService } from './map.service';
 import { GetNoticesDto } from './dto/get-notices.dto';
 import { DatasetDto } from './dto/dataset.dto';
-import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
+import { NoticeDto } from './dto/notice.dto';
 
 @ApiTags('Map')
 @Controller({
@@ -32,6 +33,9 @@ export class MapController {
   constructor(private readonly mapService: MapService) {}
 
   @UseInterceptors(CacheInterceptor)
+  // Hint for upstream proxies (Traefik / CDN). Independent of the in-memory
+  // CacheInterceptor; the value is the public cache window, not the server TTL.
+  @Header('Cache-Control', 'public, max-age=300')
   @Get('notices')
   @ApiOperation({
     summary: 'List notices to mariners',
@@ -40,7 +44,7 @@ export class MapController {
   })
   @ApiOkResponse({
     description: 'A list of notices to mariners.',
-    type: NoticeToMariners,
+    type: NoticeDto,
     isArray: true,
   })
   @ApiUnprocessableEntityResponse({
@@ -58,7 +62,7 @@ export class MapController {
   })
   @ApiOkResponse({
     description: 'A list of notices to mariners in review.',
-    type: NoticeToMariners,
+    type: NoticeDto,
     isArray: true,
   })
   @ApiUnprocessableEntityResponse({
@@ -69,6 +73,7 @@ export class MapController {
   }
 
   @UseInterceptors(CacheInterceptor)
+  @Header('Cache-Control', 'public, max-age=300')
   @Get('datasets')
   @ApiOperation({
     summary: 'List available GeoJSON datasets',

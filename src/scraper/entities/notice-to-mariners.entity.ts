@@ -45,11 +45,9 @@ export class NoticeToMariners {
   @Column({ nullable: true })
   locationLabel?: string;
 
-  @Column({ type: 'jsonb', default: () => "'[]'" })
-  area!: NoticePoint[];
-
-  // Structured geometry preserving separate polygons/lines inside one notice.
-  // `area` above is retained as a flattened compatibility view.
+  // Distinct geographic parts. The API serializer (notice-serializer.ts) maps
+  // this into a single GeoJSON geometry per notice (or GeometryCollection when
+  // there are multiple parts).
   @Column({ type: 'jsonb', default: () => "'[]'" })
   areas!: NoticeGeometryPart[];
 

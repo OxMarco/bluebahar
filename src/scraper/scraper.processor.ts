@@ -89,7 +89,6 @@ export class ScraperProcessor extends WorkerHost {
           locationLabel: p.locationLabel,
           distance: p.distance,
           depth: p.depth,
-          area: p.area,
           areas: p.areas,
         },
       });
