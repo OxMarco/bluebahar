@@ -79,18 +79,12 @@ export class ScraperProcessor extends WorkerHost {
       this.logger.warn(
         `Notice ${url}${p.subKey ? ` [${p.subKey}]` : ''} flagged for manual review`,
       );
+      // Identifier-only payload — reviewer pulls the full row from the DB
+      // via (source, subKey). Avoids shipping coordinate arrays to Sentry.
       Sentry.captureMessage('Notice to Mariners flagged for manual review', {
         level: 'warning',
         tags: { scraper: 'notice-to-mariners', kind: p.kind },
-        extra: {
-          url,
-          subKey: p.subKey,
-          title: p.title,
-          locationLabel: p.locationLabel,
-          distance: p.distance,
-          depth: p.depth,
-          areas: p.areas,
-        },
+        extra: { url, subKey: p.subKey, title: p.title },
       });
     }
     if (flagged.length === 0) {

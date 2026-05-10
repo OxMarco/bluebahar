@@ -1,4 +1,5 @@
 import { Controller, Get, Render } from '@nestjs/common';
+import { ApiExcludeEndpoint } from '@nestjs/swagger';
 import {
   DiskHealthIndicator,
   HealthCheck,
@@ -36,18 +37,21 @@ export class AppController {
 
   @Get()
   @Render('index')
+  @ApiExcludeEndpoint()
   root() {
     return { version: 'v1' };
   }
 
   @Get('/tos')
   @Render('tos')
+  @ApiExcludeEndpoint()
   tos() {
     return { version: 'v1' };
   }
 
   @Get('/privacy')
   @Render('privacy')
+  @ApiExcludeEndpoint()
   privacy() {
     return { version: 'v1' };
   }
