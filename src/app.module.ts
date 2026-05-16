@@ -14,6 +14,7 @@ import { ScraperModule } from './scraper/scraper.module';
 import { MapModule } from './map/map.module';
 import { AppController } from './app.controller';
 import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
+import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 
 @Module({
   controllers: [AppController],
@@ -22,12 +23,16 @@ import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
       isGlobal: true,
       validationSchema: configValidationSchema,
     }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000,
-        limit: 20,
-      },
-    ]),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => [
+        {
+          ttl: configService.getOrThrow<number>('THROTTLE_TTL_MS'),
+          limit: configService.getOrThrow<number>('THROTTLE_LIMIT'),
+        },
+      ],
+      inject: [ConfigService],
+    }),
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -76,6 +81,7 @@ import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
     // useGlobalFilters in main.ts) is @Catch(EntityNotFoundError) and still
     // wins for that specific type — Nest dispatches to the most specific match.
     { provide: APP_FILTER, useClass: SentryGlobalFilter },
+    { provide: APP_FILTER, useClass: ApiExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     ImpitHealthIndicator,
   ],

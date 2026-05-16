@@ -14,6 +14,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { join } from 'node:path';
 import { TypeOrmNotFoundExceptionFilter } from './common/filters/entity-not-found.filter';
+import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -47,7 +48,10 @@ async function bootstrap() {
     }),
   );
   app.useGlobalInterceptors(new ClassSerializerInterceptor(reflector));
-  app.useGlobalFilters(new TypeOrmNotFoundExceptionFilter());
+  app.useGlobalFilters(
+    new ApiExceptionFilter(),
+    new TypeOrmNotFoundExceptionFilter(),
+  );
   app.use(
     helmet({
       contentSecurityPolicy: {

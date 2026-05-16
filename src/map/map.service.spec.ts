@@ -37,17 +37,19 @@ function makeNotice(
 
 describe('MapService', () => {
   let find: jest.MockedFunction<Repository<NoticeToMariners>['find']>;
+  let count: jest.MockedFunction<Repository<NoticeToMariners>['count']>;
   let list: jest.MockedFunction<DatasetCatalogService['list']>;
   let requireEntry: jest.MockedFunction<DatasetCatalogService['requireEntry']>;
   let service: MapService;
 
   beforeEach(() => {
     find = jest.fn<Repository<NoticeToMariners>['find']>();
+    count = jest.fn<Repository<NoticeToMariners>['count']>();
     list = jest.fn<DatasetCatalogService['list']>();
     requireEntry = jest.fn<DatasetCatalogService['requireEntry']>();
 
     service = new MapService(
-      { find } as unknown as Repository<NoticeToMariners>,
+      { find, count } as unknown as Repository<NoticeToMariners>,
       { list, requireEntry } as unknown as DatasetCatalogService,
     );
   });
@@ -64,8 +66,15 @@ describe('MapService', () => {
 
     const result = await service.getNotices(query);
 
-    expect(result).toHaveLength(1);
-    expect(result[0]).toEqual(
+    expect(result).toEqual(
+      expect.objectContaining({
+        limit: 25,
+        offset: 50,
+        hasMore: false,
+      }),
+    );
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toEqual(
       expect.objectContaining({
         kind: NoticeKind.AREA,
         title: 'Temporary works',
@@ -75,7 +84,7 @@ describe('MapService', () => {
     expect(find).toHaveBeenCalledWith(
       expect.objectContaining({
         order: { activeFrom: 'DESC' },
-        take: 25,
+        take: 26,
         skip: 50,
       }),
     );
@@ -116,20 +125,82 @@ describe('MapService', () => {
     expect(find).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { needsReview: true },
-        take: 10,
+        take: 11,
         skip: 0,
       }),
     );
   });
 
+  it('uses one extra row to flag whether another page exists', async () => {
+    find.mockResolvedValue([makeNotice({ id: 'a' }), makeNotice({ id: 'b' })]);
+
+    const result = await service.getNotices({
+      activeOnly: false,
+      limit: 1,
+      offset: 0,
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.hasMore).toBe(true);
+  });
+
+  it('returns notice review and visibility metrics', async () => {
+    count
+      .mockResolvedValueOnce(12)
+      .mockResolvedValueOnce(9)
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(6)
+      .mockResolvedValueOnce(5)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1);
+
+    const result = await service.getNoticeMetrics();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        total: 12,
+        publicCount: 9,
+        needsReviewCount: 3,
+        activePublicCount: 4,
+        activeNeedsReviewCount: 2,
+      }),
+    );
+    expect(result.byKind).toEqual([
+      { kind: NoticeKind.AREA, total: 6, publicCount: 5, needsReviewCount: 1 },
+      {
+        kind: NoticeKind.FACILITY,
+        total: 4,
+        publicCount: 3,
+        needsReviewCount: 1,
+      },
+      {
+        kind: NoticeKind.ADVISORY,
+        total: 2,
+        publicCount: 1,
+        needsReviewCount: 1,
+      },
+    ]);
+    expect(count).toHaveBeenCalledTimes(14);
+  });
+
   it('delegates dataset reads to the catalog service', () => {
     const entry: DatasetEntry = {
-      filePath: '/tmp/example.geojson',
+      payload: '{"type":"FeatureCollection","features":[]}',
       metadata: {
         key: 'example',
         name: 'Example',
+        kind: 'context',
         sourceUrl: 'https://example.com/data.geojson',
         featureCount: 1,
+        geometryTypes: ['Point'],
+        bbox: [14.5, 35.9, 14.5, 35.9],
         byteSize: 2,
         sha256: 'abc123',
       },

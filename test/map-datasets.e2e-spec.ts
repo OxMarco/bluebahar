@@ -23,8 +23,11 @@ describe('Map datasets API (e2e)', () => {
   const source = {
     key: dataset.key,
     name: dataset.name,
+    kind: dataset.kind,
     sourceUrl: dataset.sourceUrl,
     featureCount: 1,
+    geometryTypes: ['Point'],
+    bbox: [14.5, 35.9, 14.5, 35.9],
     byteSize: fileStats.size,
     sha256: createHash('sha256').update(dataset.key).digest('hex'),
   };
@@ -38,9 +41,19 @@ describe('Map datasets API (e2e)', () => {
           provide: MapService,
           useValue: {
             listDatasets: jest.fn(() => [source]),
+            getNoticeMetrics: jest.fn(() => ({
+              asOf: '2026-01-01T00:00:00.000Z',
+              total: 0,
+              publicCount: 0,
+              needsReviewCount: 0,
+              activePublicCount: 0,
+              activeNeedsReviewCount: 0,
+              byKind: [],
+            })),
             requireDataset: jest.fn(() => ({
               metadata: source,
-              filePath,
+              payload:
+                '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[14.5,35.9]},"properties":{}}]}',
             })),
           },
         },
@@ -71,7 +84,26 @@ describe('Map datasets API (e2e)', () => {
       .expect(200);
 
     expect(res.headers['content-type']).toContain('application/geo+json');
-    expect(res.headers['cache-control']).toBe('public, max-age=3600');
+    expect(res.headers['cache-control']).toBe(
+      'public, max-age=3600, stale-while-revalidate=86400',
+    );
+    expect(res.headers['x-dataset-key']).toBe(dataset.key);
+    expect(res.headers['x-dataset-kind']).toBe(dataset.kind);
+    expect(res.headers['x-dataset-feature-count']).toBe('1');
+    expect(res.headers['x-dataset-geometry-types']).toBe('Point');
+    expect(res.headers['x-dataset-bbox']).toBe('14.5,35.9,14.5,35.9');
     expect(JSON.parse(res.text)).toHaveProperty('type', 'FeatureCollection');
+  });
+
+  it('GET /v1/map/datasets/:key returns 304 when ETag matches', async () => {
+    const etag = `"${source.sha256}"`;
+
+    const res = await request(app.getHttpServer())
+      .get(`/v1/map/datasets/${dataset.key}`)
+      .set('If-None-Match', etag)
+      .expect(304);
+
+    expect(res.headers.etag).toBe(etag);
+    expect(res.text).toBe('');
   });
 });

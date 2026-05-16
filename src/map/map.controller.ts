@@ -4,6 +4,7 @@ import {
   Header,
   Param,
   Query,
+  Req,
   Res,
   UseInterceptors,
 } from '@nestjs/common';
@@ -19,10 +20,12 @@ import {
   ApiProduces,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
+import type { Request } from 'express';
 import { MapService } from './map.service';
 import { GetNoticesDto } from './dto/get-notices.dto';
 import { DatasetDto } from './dto/dataset.dto';
-import { NoticeDto } from './dto/notice.dto';
+import { NoticeMetricsDto } from './dto/notice-metrics.dto';
+import { PaginatedNoticesDto } from './dto/paginated-notices.dto';
 
 @ApiTags('Map')
 @Controller({
@@ -43,9 +46,8 @@ export class MapController {
       'Returns a paginated list of notices to mariners, optionally filtered by kind and active status. Results are ordered by activeFrom descending.',
   })
   @ApiOkResponse({
-    description: 'A list of notices to mariners.',
-    type: NoticeDto,
-    isArray: true,
+    description: 'A paginated list of notices to mariners.',
+    type: PaginatedNoticesDto,
   })
   @ApiUnprocessableEntityResponse({
     description: 'Invalid query parameters.',
@@ -61,15 +63,29 @@ export class MapController {
       'Returns a paginated list of notices to mariners that need team review, optionally filtered by kind and active status. Results are ordered by activeFrom descending.',
   })
   @ApiOkResponse({
-    description: 'A list of notices to mariners in review.',
-    type: NoticeDto,
-    isArray: true,
+    description: 'A paginated list of notices to mariners in review.',
+    type: PaginatedNoticesDto,
   })
   @ApiUnprocessableEntityResponse({
     description: 'Invalid query parameters.',
   })
   async getNoticesInReview(@Query() query: GetNoticesDto) {
     return this.mapService.getNotices(query, true);
+  }
+
+  @Header('Cache-Control', 'no-store')
+  @Get('notices/metrics')
+  @ApiOperation({
+    summary: 'Get notice extraction and review metrics',
+    description:
+      'Returns notice counts, including the active notices hidden from public map endpoints because they need team review.',
+  })
+  @ApiOkResponse({
+    description: 'Notice review and visibility metrics.',
+    type: NoticeMetricsDto,
+  })
+  getNoticeMetrics() {
+    return this.mapService.getNoticeMetrics();
   }
 
   @UseInterceptors(CacheInterceptor)
@@ -113,10 +129,48 @@ export class MapController {
   @ApiServiceUnavailableResponse({
     description: 'Dataset is configured but failed to load at startup.',
   })
-  getDataset(@Param('key') key: string, @Res() res: Response) {
+  getDataset(
+    @Param('key') key: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     const dataset = this.mapService.requireDataset(key);
+    const etag = `"${dataset.metadata.sha256}"`;
     res.type('application/geo+json');
-    res.set('Cache-Control', 'public, max-age=3600');
-    res.sendFile(dataset.filePath, { lastModified: true });
+    res.set(
+      'Cache-Control',
+      'public, max-age=3600, stale-while-revalidate=86400',
+    );
+    // sha256 is computed once at boot off the same payload we're sending, so a
+    // matching If-None-Match short-circuits to 304 without ever serializing.
+    res.set('ETag', etag);
+    res.set('X-Dataset-Key', dataset.metadata.key);
+    res.set('X-Dataset-Kind', dataset.metadata.kind);
+    res.set('X-Dataset-Feature-Count', String(dataset.metadata.featureCount));
+    res.set(
+      'X-Dataset-Geometry-Types',
+      dataset.metadata.geometryTypes.join(','),
+    );
+    if (dataset.metadata.bbox) {
+      res.set('X-Dataset-BBox', dataset.metadata.bbox.join(','));
+    }
+
+    if (etagMatches(req.headers['if-none-match'], etag)) {
+      res.status(304).send();
+      return;
+    }
+    res.send(dataset.payload);
   }
+}
+
+function etagMatches(
+  header: string | string[] | undefined,
+  etag: string,
+): boolean {
+  const raw = Array.isArray(header) ? header.join(',') : header;
+  if (!raw) return false;
+  return raw
+    .split(',')
+    .map((candidate) => candidate.trim())
+    .some((candidate) => candidate === etag || candidate === '*');
 }

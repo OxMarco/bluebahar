@@ -1,4 +1,5 @@
-import { Controller, Get, Render } from '@nestjs/common';
+import { Controller, Get, Header, Render } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { ApiExcludeEndpoint } from '@nestjs/swagger';
 import {
   DiskHealthIndicator,
@@ -11,6 +12,7 @@ import {
 import { SOURCES as NOTICE_SOURCES } from './scraper/parser/notice-to-mariners';
 import { ScraperService } from './scraper/scraper.service';
 import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
+import { DatasetCatalogService } from './map/dataset-catalog.service';
 
 const SCRAPER_PING_URLS = (() => {
   const seenOrigin = new Set<string>();
@@ -33,6 +35,7 @@ export class AppController {
     private http: ImpitHealthIndicator,
     private readonly disk: DiskHealthIndicator,
     private readonly scraper: ScraperService,
+    private readonly datasets: DatasetCatalogService,
   ) {}
 
   @Get()
@@ -70,16 +73,21 @@ export class AppController {
   }
 
   @Get('/v1/health/live')
+  @SkipThrottle()
+  @Header('Cache-Control', 'no-store')
   live() {
     return { status: 'ok' };
   }
 
   @Get('/v1/health/ready')
+  @SkipThrottle()
+  @Header('Cache-Control', 'no-store')
   @HealthCheck()
   ready() {
     return this.health.check([
       () => this.db.pingCheck('database'),
       () => this.pingRedis(),
+      () => this.datasets.healthCheck(),
       () =>
         this.disk.checkStorage('storage', {
           path: '/',
@@ -89,6 +97,8 @@ export class AppController {
   }
 
   @Get('/v1/health/diagnostics')
+  @SkipThrottle()
+  @Header('Cache-Control', 'no-store')
   @HealthCheck()
   diagnostics() {
     return this.health.check([
@@ -96,6 +106,7 @@ export class AppController {
       () => this.memory.checkRSS('memory_rss', 450 * 1024 * 1024),
       () => this.db.pingCheck('database'),
       () => this.pingRedis(),
+      () => this.datasets.healthCheck(),
       ...SCRAPER_PING_URLS.map(
         (url) => () => this.http.pingCheck(new URL(url).hostname, url),
       ),
