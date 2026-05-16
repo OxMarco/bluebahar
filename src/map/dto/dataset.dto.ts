@@ -8,7 +8,7 @@ export class DatasetDto {
   name!: string;
 
   @ApiProperty({
-    description: 'Original WFS endpoint the GeoJSON was downloaded from.',
+    description: 'Original source URL the GeoJSON was derived from.',
   })
   sourceUrl!: string;
 

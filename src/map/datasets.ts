@@ -1,7 +1,7 @@
 export interface DatasetDefinition {
   key: string;
   name: string;
-  // Original WFS source URL — kept for attribution and so a maintainer can
+  // Original source URL — kept for attribution and so a maintainer can
   // re-download the GeoJSON manually when upstream republishes.
   sourceUrl: string;
 }
@@ -11,22 +11,28 @@ export interface DatasetDefinition {
 // scraping (cuts IP-block risk and infrastructure).
 export const DATASETS: DatasetDefinition[] = [
   {
-    key: 'marine-facilities',
-    name: 'Marine facilities',
+    key: 'marine-utility-areas',
+    name: 'Marine utility areas',
     sourceUrl:
-      'https://haleconnect.com/ows/services/org.1261.ca3351c0-2a54-43ff-87fe-710f9afcf9ef_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=am%3AManagementRestrictionOrRegulationZone',
+      'https://haleconnect.com/ows/services/org.1261.ca3351c0-2a54-43ff-87fe-710f9afcf9ef_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=am%3AManagementRestrictionOrRegulationZone&outputFormat=application%2Fjson',
   },
   {
-    key: 'fisheries-management-zone',
-    name: 'Fisheries Management Zone',
+    key: 'marine-area-up-to-25nm',
+    name: 'Marine area up to 25nm as covered by SPED',
     sourceUrl:
-      'https://haleconnect.com/ows/services/org.1261.4c7fe626-297d-41b3-81f9-d38f50a23d25_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=am%3AManagementRestrictionOrRegulationZone&count=1',
+      'https://haleconnect.com/ows/services/org.1261.da1e59e6-d134-48bc-8ae9-4d70e0191a4e_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=am%3AManagementRestrictionOrRegulationZone&outputFormat=application%2Fjson',
   },
   {
-    key: 'coastal-marine-infrastructure',
-    name: 'Coastal and Marine Infrastructure',
+    key: 'bathymetric-contours',
+    name: 'Bathymetric contours',
     sourceUrl:
-      'https://haleconnect.com/ows/services/org.1261.1cc518e8-38ee-4152-884f-0cc62eea4177_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=am%3AManagementRestrictionOrRegulationZone&count=1',
+      'https://ows.emodnet-bathymetry.eu/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=emodnet%3Acontours&outputFormat=application%2Fjson&bbox=13.669821,35.369532,15.089278,36.499613,EPSG%3A4326',
+  },
+  {
+    key: 'swimming-zones',
+    name: 'Swimming zones',
+    sourceUrl:
+      'https://haleconnect.com/ows/services/org.1261.1cc518e8-38ee-4152-884f-0cc62eea4177_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=am%3AManagementRestrictionOrRegulationZone&outputFormat=application%2Fjson',
   },
   {
     key: 'conservation-area-around-wrecks',
@@ -41,15 +47,26 @@ export const DATASETS: DatasetDefinition[] = [
       'https://haleconnect.com/ows/services/org.1261.74389601-d380-460f-a7dd-5e6a26798333_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=am%3AManagementRestrictionOrRegulationZone&count=1',
   },
   {
+    key: 'bunkering-areas',
+    name: 'Bunkering areas',
+    sourceUrl:
+      'https://haleconnect.com/ows/services/org.1261.52316317-f1e8-411e-9c1d-6b3aa9f21339_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=am%3AManagementRestrictionOrRegulationZone&outputFormat=application%2Fjson',
+  },
+  {
     key: 'harbour-approach-routes',
     name: 'Harbour Approach Routes',
     sourceUrl:
       'https://haleconnect.com/ows/services/org.1261.4796a5e3-19ac-43a7-94a6-e8f9a158ffc8_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=am%3AManagementRestrictionOrRegulationZone&count=1',
   },
   {
-    key: 'natura-2000-sites',
-    name: 'Natura 2000 Sites',
+    key: 'diving-sites',
+    name: 'Diving Sites',
+    sourceUrl: 'https://maltadives.com/js/Map/MapDiveSites.php',
+  },
+  {
+    key: 'marine-caves',
+    name: 'Marine caves',
     sourceUrl:
-      'https://haleconnect.com/ows/services/org.1261.47b1eb61-a89a-4ee0-a4e4-6e0123f8601b_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=ps%3AProtectedSite&count=1',
+      'https://haleconnect.com/ows/services/org.1261.253f2b31-c591-41c2-9091-bb5080c9872a_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=ge%3AMappedFeature&outputFormat=application%2Fgeo%2Bjson',
   },
 ];
