@@ -10,11 +10,8 @@ import {
   VersioningType,
 } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { join } from 'node:path';
-import { TypeOrmNotFoundExceptionFilter } from './common/filters/entity-not-found.filter';
-import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -22,19 +19,12 @@ async function bootstrap() {
     rawBody: true,
     cors: true,
   });
-  const config = new DocumentBuilder()
-    .setTitle('Docs')
-    .setDescription('Backend API description')
-    .setVersion('1.0')
-    .build();
-  const documentFactory = () => SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, documentFactory);
-
   const reflector = app.get(Reflector);
 
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
+      forbidNonWhitelisted: true,
       forbidUnknownValues: true,
       errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
       transform: true,
@@ -48,10 +38,6 @@ async function bootstrap() {
     }),
   );
   app.useGlobalInterceptors(new ClassSerializerInterceptor(reflector));
-  app.useGlobalFilters(
-    new ApiExceptionFilter(),
-    new TypeOrmNotFoundExceptionFilter(),
-  );
   app.use(
     helmet({
       contentSecurityPolicy: {

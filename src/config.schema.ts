@@ -9,7 +9,9 @@ export const configValidationSchema = Joi.object({
   DB_PASSWORD: Joi.string().required(),
 
   // Application configuration
-  NODE_ENV: Joi.string().valid('development', 'production', 'test').required(),
+  NODE_ENV: Joi.string()
+    .valid('development', 'production', 'test')
+    .default('development'),
   PORT: Joi.number().port().required(),
 
   // Queue configuration

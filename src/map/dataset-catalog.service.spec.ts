@@ -40,7 +40,8 @@ describe('DatasetCatalogService', () => {
 
     expect(entry.metadata.key).toBe(DATASETS[0].key);
     expect(typeof entry.payload).toBe('string');
-    expect(JSON.parse(entry.payload).type).toBe('FeatureCollection');
+    const parsed = JSON.parse(entry.payload) as { type?: unknown };
+    expect(parsed.type).toBe('FeatureCollection');
   });
 
   it('serves normalized properties for interactive datasets', () => {

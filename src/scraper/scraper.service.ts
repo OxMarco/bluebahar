@@ -37,28 +37,11 @@ export class ScraperService implements OnApplicationBootstrap {
     }
   }
 
-  // Exposed so health checks can reuse BullMQ's Redis connection rather than
-  // opening a separate socket.
-  async pingRedis(): Promise<boolean> {
-    const client = await this.queue.client;
-    return (await client.ping()) === 'PONG';
-  }
-
   // @nestjs/schedule logs unhandled cron errors but does not propagate them to
-  // Sentry's global filter. Wrap each cron operation so failures reach Sentry
-  // regardless of caller (cron tick or bootstrap).
-  private async runScrape<T>(name: string, fn: () => Promise<T>): Promise<T> {
-    try {
-      return await fn();
-    } catch (err) {
-      Sentry.captureException(err, { tags: { scraper: name } });
-      throw err;
-    }
-  }
-
+  // Sentry's global filter, so capture in-line before rethrowing.
   @Cron(CronExpression.EVERY_12_HOURS)
   async scrapeNoticeToMariners() {
-    return this.runScrape('notice-to-mariners', async () => {
+    try {
       const links = await listNoticeLinks();
 
       const stored = await this.repo.find({ select: { source: true } });
@@ -90,6 +73,11 @@ export class ScraperService implements OnApplicationBootstrap {
       }
       this.logger.log(`Enqueued ${next.length} notice(s)`);
       return { message: 'Enqueued', enqueued: next.length };
-    });
+    } catch (err) {
+      Sentry.captureException(err, {
+        tags: { scraper: 'notice-to-mariners' },
+      });
+      throw err;
+    }
   }
 }

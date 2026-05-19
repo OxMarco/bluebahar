@@ -2,32 +2,18 @@ import {
   Controller,
   Get,
   Header,
+  Headers,
+  HttpStatus,
   Param,
   Query,
-  Req,
   Res,
   UseInterceptors,
 } from '@nestjs/common';
 import { CacheInterceptor } from '@nestjs/cache-manager';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiOkResponse,
-  ApiNotFoundResponse,
-  ApiServiceUnavailableResponse,
-  ApiUnprocessableEntityResponse,
-  ApiParam,
-  ApiProduces,
-} from '@nestjs/swagger';
 import type { Response } from 'express';
-import type { Request } from 'express';
 import { MapService } from './map.service';
 import { GetNoticesDto } from './dto/get-notices.dto';
-import { DatasetDto } from './dto/dataset.dto';
-import { NoticeMetricsDto } from './dto/notice-metrics.dto';
-import { PaginatedNoticesDto } from './dto/paginated-notices.dto';
 
-@ApiTags('Map')
 @Controller({
   path: '/map',
   version: '1',
@@ -40,50 +26,17 @@ export class MapController {
   // CacheInterceptor; the value is the public cache window, not the server TTL.
   @Header('Cache-Control', 'public, max-age=300')
   @Get('notices')
-  @ApiOperation({
-    summary: 'List notices to mariners',
-    description:
-      'Returns a paginated list of notices to mariners, optionally filtered by kind and active status. Results are ordered by activeFrom descending.',
-  })
-  @ApiOkResponse({
-    description: 'A paginated list of notices to mariners.',
-    type: PaginatedNoticesDto,
-  })
-  @ApiUnprocessableEntityResponse({
-    description: 'Invalid query parameters.',
-  })
   async getNotices(@Query() query: GetNoticesDto) {
     return this.mapService.getNotices(query);
   }
 
   @Get('notices/review')
-  @ApiOperation({
-    summary: 'List notices to mariners currently in review',
-    description:
-      'Returns a paginated list of notices to mariners that need team review, optionally filtered by kind and active status. Results are ordered by activeFrom descending.',
-  })
-  @ApiOkResponse({
-    description: 'A paginated list of notices to mariners in review.',
-    type: PaginatedNoticesDto,
-  })
-  @ApiUnprocessableEntityResponse({
-    description: 'Invalid query parameters.',
-  })
   async getNoticesInReview(@Query() query: GetNoticesDto) {
     return this.mapService.getNotices(query, true);
   }
 
   @Header('Cache-Control', 'no-store')
   @Get('notices/metrics')
-  @ApiOperation({
-    summary: 'Get notice extraction and review metrics',
-    description:
-      'Returns notice counts, including the active notices hidden from public map endpoints because they need team review.',
-  })
-  @ApiOkResponse({
-    description: 'Notice review and visibility metrics.',
-    type: NoticeMetricsDto,
-  })
   getNoticeMetrics() {
     return this.mapService.getNoticeMetrics();
   }
@@ -91,56 +44,20 @@ export class MapController {
   @UseInterceptors(CacheInterceptor)
   @Header('Cache-Control', 'public, max-age=300')
   @Get('datasets')
-  @ApiOperation({
-    summary: 'List available GeoJSON datasets',
-    description:
-      'Returns metadata for every available dataset (key, name, source URL, feature count, byte size, sha256). Use the key with GET /map/datasets/:key to download the GeoJSON file.',
-  })
-  @ApiOkResponse({
-    description: 'Metadata for every available dataset.',
-    type: DatasetDto,
-    isArray: true,
-  })
   listDatasets() {
     return this.mapService.listDatasets();
   }
 
   @Get('datasets/:key')
-  @ApiOperation({
-    summary: 'Download a GeoJSON dataset',
-    description:
-      'Streams the GeoJSON file for the dataset identified by `key`. Responses are cacheable for one hour.',
-  })
-  @ApiParam({
-    name: 'key',
-    description: 'Unique dataset identifier as returned by GET /map/datasets.',
-    type: String,
-  })
-  @ApiProduces('application/geo+json')
-  @ApiOkResponse({
-    description: 'The GeoJSON file contents.',
-    content: {
-      'application/geo+json': {
-        schema: { type: 'string', format: 'binary' },
-      },
-    },
-  })
-  @ApiNotFoundResponse({ description: 'No dataset exists for the given key.' })
-  @ApiServiceUnavailableResponse({
-    description: 'Dataset is configured but failed to load at startup.',
-  })
+  @Header('Content-Type', 'application/geo+json')
+  @Header('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400')
   getDataset(
     @Param('key') key: string,
-    @Req() req: Request,
-    @Res() res: Response,
+    @Headers('if-none-match') ifNoneMatch: string | undefined,
+    @Res({ passthrough: true }) res: Response,
   ) {
     const dataset = this.mapService.requireDataset(key);
     const etag = `"${dataset.metadata.sha256}"`;
-    res.type('application/geo+json');
-    res.set(
-      'Cache-Control',
-      'public, max-age=3600, stale-while-revalidate=86400',
-    );
     // sha256 is computed once at boot off the same payload we're sending, so a
     // matching If-None-Match short-circuits to 304 without ever serializing.
     res.set('ETag', etag);
@@ -155,21 +72,17 @@ export class MapController {
       res.set('X-Dataset-BBox', dataset.metadata.bbox.join(','));
     }
 
-    if (etagMatches(req.headers['if-none-match'], etag)) {
-      res.status(304).send();
-      return;
+    if (etagMatches(ifNoneMatch, etag)) {
+      res.status(HttpStatus.NOT_MODIFIED);
+      return null;
     }
-    res.send(dataset.payload);
+    return dataset.payload;
   }
 }
 
-function etagMatches(
-  header: string | string[] | undefined,
-  etag: string,
-): boolean {
-  const raw = Array.isArray(header) ? header.join(',') : header;
-  if (!raw) return false;
-  return raw
+function etagMatches(header: string | undefined, etag: string): boolean {
+  if (!header) return false;
+  return header
     .split(',')
     .map((candidate) => candidate.trim())
     .some((candidate) => candidate === etag || candidate === '*');

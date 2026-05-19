@@ -6,6 +6,7 @@ import {
   GeoJsonLineString,
   GeoJsonPolygon,
 } from './dto/notice.dto';
+import { boundingCircle, representativePoint } from './notice-geometry';
 
 type EntityGeometryPart = NoticeToMariners['areas'][number];
 
@@ -70,5 +71,7 @@ export function toNoticeDto(entity: NoticeToMariners): NoticeDto {
     activeTo: entity.activeTo ? entity.activeTo.toISOString() : null,
     distance: entity.distance ?? null,
     geometry: buildGeometry(entity.areas),
+    representativePoint: representativePoint(entity),
+    boundingCircle: boundingCircle(entity),
   };
 }

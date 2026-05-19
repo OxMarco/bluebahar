@@ -37,9 +37,7 @@ describe('configValidationSchema', () => {
   });
 
   it('requires infrastructure and application secrets', () => {
-    const incomplete = { ...validEnv };
-    delete incomplete.DB_PASSWORD;
-    delete incomplete.OPENAI_API_KEY;
+    const { DB_PASSWORD: _pwd, OPENAI_API_KEY: _key, ...incomplete } = validEnv;
 
     const { error } = validate(incomplete);
 

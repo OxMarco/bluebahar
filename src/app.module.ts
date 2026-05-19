@@ -15,6 +15,7 @@ import { MapModule } from './map/map.module';
 import { AppController } from './app.controller';
 import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
+import { TypeOrmNotFoundExceptionFilter } from './common/filters/entity-not-found.filter';
 
 @Module({
   controllers: [AppController],
@@ -22,6 +23,7 @@ import { ApiExceptionFilter } from './common/filters/api-exception.filter';
     ConfigModule.forRoot({
       isGlobal: true,
       validationSchema: configValidationSchema,
+      validationOptions: { abortEarly: false },
     }),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
@@ -76,12 +78,12 @@ import { ApiExceptionFilter } from './common/filters/api-exception.filter';
     MapModule,
   ],
   providers: [
-    // Sentry filter must come first so it captures errors before other filters
-    // respond. The existing TypeOrmNotFoundExceptionFilter (registered via
-    // useGlobalFilters in main.ts) is @Catch(EntityNotFoundError) and still
-    // wins for that specific type — Nest dispatches to the most specific match.
+    // Sentry filter is registered first so it captures errors before other
+    // filters respond. TypeOrmNotFoundExceptionFilter is @Catch(EntityNotFoundError)
+    // and still wins for that specific type — Nest dispatches to the most specific match.
     { provide: APP_FILTER, useClass: SentryGlobalFilter },
     { provide: APP_FILTER, useClass: ApiExceptionFilter },
+    { provide: APP_FILTER, useClass: TypeOrmNotFoundExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     ImpitHealthIndicator,
   ],

@@ -43,10 +43,16 @@ describe('MapService', () => {
   let service: MapService;
 
   beforeEach(() => {
-    find = jest.fn<Repository<NoticeToMariners>['find']>();
-    count = jest.fn<Repository<NoticeToMariners>['count']>();
-    list = jest.fn<DatasetCatalogService['list']>();
-    requireEntry = jest.fn<DatasetCatalogService['requireEntry']>();
+    find = jest.fn() as jest.MockedFunction<
+      Repository<NoticeToMariners>['find']
+    >;
+    count = jest.fn() as jest.MockedFunction<
+      Repository<NoticeToMariners>['count']
+    >;
+    list = jest.fn() as jest.MockedFunction<DatasetCatalogService['list']>;
+    requireEntry = jest.fn() as jest.MockedFunction<
+      DatasetCatalogService['requireEntry']
+    >;
 
     service = new MapService(
       { find, count } as unknown as Repository<NoticeToMariners>,

@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { HealthIndicatorResult } from '@nestjs/terminus';
+import { bbox as turfBbox } from '@turf/bbox';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -233,7 +234,7 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
         continue;
       }
       const id = featureId(def.key, normalized, rawProps, index, seenIds);
-      const bbox = geometryBbox(feature.geometry);
+      const bbox = geoJsonBbox(feature.geometry);
       out.push({
         type: 'Feature',
         id,
@@ -289,7 +290,6 @@ function summarizeFeatures(
   }
 
   const types = new Set<string>();
-  let bbox: GeoJsonBbox | undefined;
   for (const [index, feature] of features.entries()) {
     if (!isRecord(feature) || feature.type !== 'Feature') {
       throw new Error(
@@ -301,16 +301,13 @@ function summarizeFeatures(
         `Feature ${index} in "${def.key}" has invalid properties`,
       );
     }
-    const featureBbox = validateGeometry(
-      def.key,
-      bounds,
-      index,
-      feature.geometry,
-      types,
-    );
-    bbox = mergeBbox(bbox, featureBbox);
+    validateGeometry(def.key, bounds, index, feature.geometry, types);
   }
 
+  const bbox = geoJsonBbox({
+    type: 'FeatureCollection',
+    features,
+  });
   if (!bbox) {
     throw new Error(`Dataset "${def.key}" has no valid coordinate bbox`);
   }
@@ -328,7 +325,7 @@ function validateGeometry(
   featureIndex: number,
   geometry: unknown,
   types: Set<string>,
-): GeoJsonBbox {
+) {
   if (!isRecord(geometry)) {
     throw new Error(
       `Feature ${featureIndex} in "${datasetKey}" has no geometry`,
@@ -352,19 +349,10 @@ function validateGeometry(
         `Feature ${featureIndex} in "${datasetKey}" has an empty GeometryCollection`,
       );
     }
-    let bbox: GeoJsonBbox | undefined;
     for (const child of geometry.geometries) {
-      bbox = mergeBbox(
-        bbox,
-        validateGeometry(datasetKey, bounds, featureIndex, child, types),
-      );
+      validateGeometry(datasetKey, bounds, featureIndex, child, types);
     }
-    if (!bbox) {
-      throw new Error(
-        `Feature ${featureIndex} in "${datasetKey}" has no GeometryCollection coordinates`,
-      );
-    }
-    return bbox;
+    return;
   }
 
   validateCoordinates(
@@ -374,13 +362,12 @@ function validateGeometry(
     type,
     geometry.coordinates,
   );
-  const bbox = geometryBbox(geometry);
+  const bbox = geoJsonBbox(geometry);
   if (!bbox) {
     throw new Error(
       `Feature ${featureIndex} in "${datasetKey}" has no valid coordinates`,
     );
   }
-  return bbox;
 }
 
 function validateCoordinates(
@@ -463,18 +450,23 @@ function validatePolygon(
   featureIndex: number,
   coordinates: unknown,
 ) {
-  if (!Array.isArray(coordinates) || coordinates.length === 0) {
+  if (!isUnknownArray(coordinates) || coordinates.length === 0) {
     throw new Error(
       `Feature ${featureIndex} in "${datasetKey}" has an empty polygon`,
     );
   }
   for (const ring of coordinates) {
     validatePositionArray(datasetKey, bounds, featureIndex, ring, 4);
+    if (!isUnknownArray(ring)) {
+      throw new Error(
+        `Feature ${featureIndex} in "${datasetKey}" has an invalid polygon ring`,
+      );
+    }
     const first = ring[0];
     const last = ring[ring.length - 1];
     if (
-      !Array.isArray(first) ||
-      !Array.isArray(last) ||
+      !isUnknownArray(first) ||
+      !isUnknownArray(last) ||
       first[0] !== last[0] ||
       first[1] !== last[1]
     ) {
@@ -565,63 +557,32 @@ function slugify(value: string): string {
     .slice(0, 120);
 }
 
-function geometryBbox(geometry: unknown): GeoJsonBbox | undefined {
-  if (!isRecord(geometry)) return undefined;
-  if (
-    geometry.type === 'GeometryCollection' &&
-    Array.isArray(geometry.geometries)
-  ) {
-    let bbox: GeoJsonBbox | undefined;
-    for (const child of geometry.geometries) {
-      bbox = mergeBbox(bbox, geometryBbox(child));
+function geoJsonBbox(value: unknown): GeoJsonBbox | undefined {
+  try {
+    const [minX, minY, maxX, maxY] = turfBbox(
+      value as Parameters<typeof turfBbox>[0],
+      { recompute: true },
+    );
+    if (
+      !isFiniteNumber(minX) ||
+      !isFiniteNumber(minY) ||
+      !isFiniteNumber(maxX) ||
+      !isFiniteNumber(maxY)
+    ) {
+      return undefined;
     }
-    return bbox;
+    return [minX, minY, maxX, maxY];
+  } catch {
+    return undefined;
   }
-
-  const acc = {
-    minX: Number.POSITIVE_INFINITY,
-    minY: Number.POSITIVE_INFINITY,
-    maxX: Number.NEGATIVE_INFINITY,
-    maxY: Number.NEGATIVE_INFINITY,
-  };
-  visitCoordinates(geometry.coordinates, acc);
-  if (!Number.isFinite(acc.minX)) return undefined;
-  return [acc.minX, acc.minY, acc.maxX, acc.maxY];
-}
-
-function visitCoordinates(
-  value: unknown,
-  acc: { minX: number; minY: number; maxX: number; maxY: number },
-) {
-  if (!Array.isArray(value)) return;
-  if (isFiniteNumber(value[0]) && isFiniteNumber(value[1])) {
-    acc.minX = Math.min(acc.minX, value[0]);
-    acc.minY = Math.min(acc.minY, value[1]);
-    acc.maxX = Math.max(acc.maxX, value[0]);
-    acc.maxY = Math.max(acc.maxY, value[1]);
-    return;
-  }
-  for (const child of value) {
-    visitCoordinates(child, acc);
-  }
-}
-
-function mergeBbox(
-  current: GeoJsonBbox | undefined,
-  next: GeoJsonBbox | undefined,
-): GeoJsonBbox | undefined {
-  if (!next) return current;
-  if (!current) return next;
-  return [
-    Math.min(current[0], next[0]),
-    Math.min(current[1], next[1]),
-    Math.max(current[2], next[2]),
-    Math.max(current[3], next[3]),
-  ];
 }
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

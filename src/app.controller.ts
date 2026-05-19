@@ -1,17 +1,15 @@
 import { Controller, Get, Header, Render } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
-import { ApiExcludeEndpoint } from '@nestjs/swagger';
 import {
   DiskHealthIndicator,
   HealthCheck,
   HealthCheckService,
-  type HealthIndicatorResult,
   MemoryHealthIndicator,
   TypeOrmHealthIndicator,
 } from '@nestjs/terminus';
 import { SOURCES as NOTICE_SOURCES } from './scraper/parser/notice-to-mariners';
-import { ScraperService } from './scraper/scraper.service';
 import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
+import { RedisHealthIndicator } from './common/health/redis-health.indicator';
 import { DatasetCatalogService } from './map/dataset-catalog.service';
 
 const SCRAPER_PING_URLS = (() => {
@@ -29,32 +27,29 @@ const SCRAPER_PING_URLS = (() => {
 @Controller('/')
 export class AppController {
   constructor(
-    private health: HealthCheckService,
-    private memory: MemoryHealthIndicator,
-    private db: TypeOrmHealthIndicator,
-    private http: ImpitHealthIndicator,
+    private readonly health: HealthCheckService,
+    private readonly memory: MemoryHealthIndicator,
+    private readonly db: TypeOrmHealthIndicator,
+    private readonly http: ImpitHealthIndicator,
     private readonly disk: DiskHealthIndicator,
-    private readonly scraper: ScraperService,
+    private readonly redis: RedisHealthIndicator,
     private readonly datasets: DatasetCatalogService,
   ) {}
 
   @Get()
   @Render('index')
-  @ApiExcludeEndpoint()
   root() {
     return { version: 'v1' };
   }
 
   @Get('/tos')
   @Render('tos')
-  @ApiExcludeEndpoint()
   tos() {
     return { version: 'v1' };
   }
 
   @Get('/privacy')
   @Render('privacy')
-  @ApiExcludeEndpoint()
   privacy() {
     return { version: 'v1' };
   }
@@ -86,7 +81,7 @@ export class AppController {
   ready() {
     return this.health.check([
       () => this.db.pingCheck('database'),
-      () => this.pingRedis(),
+      () => this.redis.pingCheck('redis'),
       () => this.datasets.healthCheck(),
       () =>
         this.disk.checkStorage('storage', {
@@ -105,7 +100,7 @@ export class AppController {
       () => this.memory.checkHeap('memory_heap', 384 * 1024 * 1024),
       () => this.memory.checkRSS('memory_rss', 450 * 1024 * 1024),
       () => this.db.pingCheck('database'),
-      () => this.pingRedis(),
+      () => this.redis.pingCheck('redis'),
       () => this.datasets.healthCheck(),
       ...SCRAPER_PING_URLS.map(
         (url) => () => this.http.pingCheck(new URL(url).hostname, url),
@@ -116,19 +111,5 @@ export class AppController {
           thresholdPercent: 0.85,
         }),
     ]);
-  }
-
-  private async pingRedis(): Promise<HealthIndicatorResult> {
-    try {
-      const ok = await this.scraper.pingRedis();
-      return { redis: { status: ok ? 'up' : 'down' } };
-    } catch (err) {
-      return {
-        redis: {
-          status: 'down',
-          message: err instanceof Error ? err.message : String(err),
-        },
-      };
-    }
   }
 }

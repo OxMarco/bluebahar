@@ -1,3 +1,5 @@
+import { booleanPointInPolygon } from '@turf/boolean-point-in-polygon';
+import { polygon } from '@turf/helpers';
 import type { PdfLine } from './pdf-text';
 
 // Deterministic coordinate extraction. The LLM never produces coordinates —
@@ -303,24 +305,7 @@ const MALTA_LAND_POLYGONS: [number, number][][] = [
   ],
 ];
 
-function pointInRing(
-  lng: number,
-  lat: number,
-  ring: [number, number][],
-): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i];
-    const [xj, yj] = ring[j];
-    if (
-      yi > lat !== yj > lat &&
-      lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi
-    ) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
+const MALTA_LAND_FEATURES = MALTA_LAND_POLYGONS.map((ring) => polygon([ring]));
 
 export function validateAreaCoordinates(
   area: { lat: number; long: number }[],
@@ -338,7 +323,11 @@ export function validateAreaCoordinates(
       );
       continue;
     }
-    if (MALTA_LAND_POLYGONS.some((ring) => pointInRing(long, lat, ring))) {
+    if (
+      MALTA_LAND_FEATURES.some((land) =>
+        booleanPointInPolygon([long, lat], land),
+      )
+    ) {
       errors.push(
         `(${lat}, ${long}) falls on Maltese land — re-check the source coordinates`,
       );

@@ -5,185 +5,104 @@
 // DMS-to-decimal errors, lat/long swaps) by construction.
 
 import OpenAI from 'openai';
+import { zodResponseFormat } from 'openai/helpers/zod';
+import { z } from 'zod';
 import { NoticeKind } from '../../notice-kind';
 
-export type OutlineGeometryType = 'point' | 'line' | 'polygon';
+const OutlineGeometryTypeSchema = z.enum(['point', 'line', 'polygon']);
 
-export interface OutlineGeometryPart {
-  label: string;
-  geometryType: OutlineGeometryType;
-  // Verbatim nearby heading/phrase when the part has one; null when point
-  // labels are the only reliable way to bind coords to this part.
-  headingAnchor: string | null;
-  // PDF table point labels that belong to this part, in drawing order. Never
-  // coordinates; just labels such as ["A", "B", "C"] or ["W", "X", "Y", "Z"].
-  pointLabels: string[];
-}
+const OutlineGeometryPartSchema = z
+  .object({
+    label: z
+      .string()
+      .describe(
+        'Short label for this geometry part, e.g. "A-E removal area", "F-G silt curtain", or "Ir-Ramla tal-Mixquqa".',
+      ),
+    geometryType: OutlineGeometryTypeSchema.describe(
+      "'point' = one hazard/position; 'line' = route, cable, curtain, or two-point segment; 'polygon' = bounded/enclosed area.",
+    ),
+    headingAnchor: z
+      .string()
+      .nullable()
+      .describe(
+        'Verbatim nearby phrase/heading that introduces this part, or null when no stable phrase exists.',
+      ),
+    pointLabels: z
+      .array(z.string())
+      .describe(
+        'Table point labels for this part in drawing order. Do not include coordinates. Example: ["A", "B", "C", "D"].',
+      ),
+  })
+  .strict();
 
-export interface OutlineRecord {
-  // Stable identifier disambiguating sibling records from the same PDF.
-  // Empty string ONLY when the PDF maps to one record. Doubles as the
-  // composite-unique-constraint key in the database.
-  subKey: string;
-  kind: NoticeKind;
-  title: string;
-  description: string;
-  // Required for kind='facility', optional context for 'area', null for 'advisory'.
-  locationLabel: string | null;
-  publishedAt: string;
-  activeFrom: string;
-  activeTo: string | null;
-  // Safety distance / radius from the hazard, in METRES (LLM converts from
-  // any source unit). Null when the notice doesn't state one — many area
-  // notices are self-defining polygons with no extra berth requirement.
-  distance: number | null;
-  // Hazard depth in METRES (LLM converts from any source unit). Null when
-  // not stated. Note: this is the depth of the hazard itself (e.g. depth of
-  // a wreck), not an operational draught limit.
-  depth: number | null;
-  // Distinct geographic parts inside this record. For kind='area', there is
-  // normally one part, but notices can contain separate polygons/lines that
-  // must not be stitched together on the map. Empty for advisory/facility.
-  geometryParts: OutlineGeometryPart[];
-  // Verbatim heading line as it appears in the extracted PDF text. Used to
-  // attach regex-extracted coordinates to this section (see extract.ts).
-  // Empty string when there's only one record (then all coords belong to it).
-  headingAnchor: string;
-  // Inclusive page range within which this section's content lives. Used as
-  // a coarse coord-assignment filter; combined with headingAnchor for cases
-  // where multiple sections share a page.
-  pageStart: number;
-  pageEnd: number;
-}
+const OutlineRecordSchema = z
+  .object({
+    subKey: z
+      .string()
+      .describe(
+        "Stable identifier (e.g. 'Bunkering Area 1', 'VHF Channel Assignments'). Empty string only when the PDF is a single notice.",
+      ),
+    kind: z
+      .enum([NoticeKind.AREA, NoticeKind.FACILITY, NoticeKind.ADVISORY])
+      .describe(
+        "Classify by section PURPOSE, not whether coordinates appear. 'area' = defines/restricts a geographic region. 'facility' = concerns a named place (berth, lock, channel, port, harbour). 'advisory' = general guidance, regulatory rules, contact info, channel assignments.",
+      ),
+    title: z.string(),
+    description: z.string(),
+    locationLabel: z
+      .string()
+      .nullable()
+      .describe(
+        "Required for 'facility' (e.g. 'Kalkara Harbour'); optional context for 'area'; null for 'advisory'.",
+      ),
+    publishedAt: z.string().describe('ISO 8601 date'),
+    activeFrom: z.string().describe('ISO 8601 date'),
+    activeTo: z
+      .string()
+      .nullable()
+      .describe('ISO 8601 date, null if no expiry'),
+    distance: z
+      .number()
+      .nullable()
+      .describe(
+        'Safety distance / wide-berth radius from the hazard, in METRES. Convert from any source unit: 1 nautical mile = 1852m, 1 cable = 185.2m, 1 foot = 0.3048m. Null if the notice does not state a safety distance.',
+      ),
+    depth: z
+      .number()
+      .nullable()
+      .describe(
+        'Depth of the hazard itself in METRES (e.g. depth of a wreck below sea level). NOT an operational draught limit. Convert from any source unit: 1 foot = 0.3048m, 1 fathom = 1.8288m. Null if not stated.',
+      ),
+    geometryParts: z
+      .array(OutlineGeometryPartSchema)
+      .describe(
+        "For kind='area', one entry per distinct geometry that should be drawn separately. Use pointLabels to bind table rows without extracting coordinates. Empty for facility/advisory.",
+      ),
+    headingAnchor: z
+      .string()
+      .describe(
+        'Verbatim heading line as it appears in the PDF text (e.g. "Bunkering Area 1"). Used to attach extracted coordinates to this section. Empty string only when the PDF is a single notice.',
+      ),
+    pageStart: z.number().int().min(1),
+    pageEnd: z.number().int().min(1),
+  })
+  .strict();
+
+const OutlineSchema = z
+  .object({
+    notices: z
+      .array(OutlineRecordSchema)
+      .describe(
+        'One entry per distinct subject in the PDF. Most NTMs are a single record. Composite PDFs (multiple bunkering areas, separate VTS zones, mixed advisory + area sections) must be split — each record covers ONE subject only.',
+      ),
+  })
+  .strict();
+
+export type OutlineGeometryPart = z.infer<typeof OutlineGeometryPartSchema>;
+export type OutlineGeometryType = z.infer<typeof OutlineGeometryTypeSchema>;
+export type OutlineRecord = z.infer<typeof OutlineRecordSchema>;
 
 const MODEL = 'gpt-5.5';
-
-const RECORD_SCHEMA = {
-  type: 'object',
-  properties: {
-    subKey: {
-      type: 'string',
-      description:
-        "Stable identifier (e.g. 'Bunkering Area 1', 'VHF Channel Assignments'). " +
-        'Empty string only when the PDF is a single notice.',
-    },
-    kind: {
-      type: 'string',
-      enum: ['area', 'facility', 'advisory'],
-      description:
-        'Classify by section PURPOSE, not whether coordinates appear. ' +
-        "'area' = defines/restricts a geographic region. " +
-        "'facility' = concerns a named place (berth, lock, channel, port, harbour). " +
-        "'advisory' = general guidance, regulatory rules, contact info, channel assignments.",
-    },
-    title: { type: 'string' },
-    description: { type: 'string' },
-    locationLabel: {
-      type: ['string', 'null'],
-      description:
-        "Required for 'facility' (e.g. 'Kalkara Harbour'); " +
-        "optional context for 'area'; null for 'advisory'.",
-    },
-    publishedAt: { type: 'string', description: 'ISO 8601 date' },
-    activeFrom: { type: 'string', description: 'ISO 8601 date' },
-    activeTo: {
-      type: ['string', 'null'],
-      description: 'ISO 8601 date, null if no expiry',
-    },
-    distance: {
-      type: ['number', 'null'],
-      description:
-        'Safety distance / wide-berth radius from the hazard, in METRES. ' +
-        'Convert from any source unit: 1 nautical mile = 1852m, ' +
-        '1 cable = 185.2m, 1 foot = 0.3048m. ' +
-        'Null if the notice does not state a safety distance.',
-    },
-    depth: {
-      type: ['number', 'null'],
-      description:
-        'Depth of the hazard itself in METRES (e.g. depth of a wreck below sea level). ' +
-        'NOT an operational draught limit. Convert from any source unit: ' +
-        '1 foot = 0.3048m, 1 fathom = 1.8288m. Null if not stated.',
-    },
-    geometryParts: {
-      type: 'array',
-      description:
-        "For kind='area', one entry per distinct geometry that should be drawn separately. " +
-        'Use pointLabels to bind table rows without extracting coordinates. Empty for facility/advisory.',
-      items: {
-        type: 'object',
-        properties: {
-          label: {
-            type: 'string',
-            description:
-              'Short label for this geometry part, e.g. "A-E removal area", "F-G silt curtain", or "Ir-Ramla tal-Mixquqa".',
-          },
-          geometryType: {
-            type: 'string',
-            enum: ['point', 'line', 'polygon'],
-            description:
-              "'point' = one hazard/position; 'line' = route, cable, curtain, or two-point segment; 'polygon' = bounded/enclosed area.",
-          },
-          headingAnchor: {
-            type: ['string', 'null'],
-            description:
-              'Verbatim nearby phrase/heading that introduces this part, or null when no stable phrase exists.',
-          },
-          pointLabels: {
-            type: 'array',
-            description:
-              'Table point labels for this part in drawing order. Do not include coordinates. Example: ["A", "B", "C", "D"].',
-            items: { type: 'string' },
-          },
-        },
-        required: ['label', 'geometryType', 'headingAnchor', 'pointLabels'],
-        additionalProperties: false,
-      },
-    },
-    headingAnchor: {
-      type: 'string',
-      description:
-        'Verbatim heading line as it appears in the PDF text (e.g. "Bunkering Area 1"). ' +
-        'Used to attach extracted coordinates to this section. ' +
-        'Empty string only when the PDF is a single notice.',
-    },
-    pageStart: { type: 'integer', minimum: 1 },
-    pageEnd: { type: 'integer', minimum: 1 },
-  },
-  required: [
-    'subKey',
-    'kind',
-    'title',
-    'description',
-    'locationLabel',
-    'publishedAt',
-    'activeFrom',
-    'activeTo',
-    'distance',
-    'depth',
-    'geometryParts',
-    'headingAnchor',
-    'pageStart',
-    'pageEnd',
-  ],
-  additionalProperties: false,
-} as const;
-
-const OUTLINE_SCHEMA = {
-  type: 'object',
-  properties: {
-    notices: {
-      type: 'array',
-      description:
-        'One entry per distinct subject in the PDF. Most NTMs are a single record. ' +
-        'Composite PDFs (multiple bunkering areas, separate VTS zones, mixed advisory + area sections) ' +
-        'must be split — each record covers ONE subject only.',
-      items: RECORD_SCHEMA,
-    },
-  },
-  required: ['notices'],
-  additionalProperties: false,
-} as const;
 
 const SYSTEM_PROMPT = [
   'You read a Maltese maritime "Notice to Mariners" PDF (provided as page-broken text)',
@@ -218,7 +137,7 @@ export async function callOutline(
   openai: OpenAI,
   pdfText: string,
 ): Promise<OutlineRecord[]> {
-  const completion = await openai.chat.completions.create({
+  const completion = await openai.chat.completions.parse({
     model: MODEL,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
@@ -229,19 +148,11 @@ export async function callOutline(
           pdfText,
       },
     ],
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'parsed_notices_outline',
-        strict: true,
-        schema: OUTLINE_SCHEMA,
-      },
-    },
+    response_format: zodResponseFormat(OutlineSchema, 'parsed_notices_outline'),
   });
 
-  const raw = completion.choices[0]?.message?.content;
-  if (!raw) throw new Error(`Empty LLM outline response for ${url}`);
-  const parsed = JSON.parse(raw) as { notices: OutlineRecord[] };
+  const parsed = completion.choices[0]?.message.parsed;
+  if (!parsed) throw new Error(`Empty LLM outline response for ${url}`);
 
   if (parsed.notices.length === 0) {
     throw new Error(`LLM returned zero notices for ${url}`);

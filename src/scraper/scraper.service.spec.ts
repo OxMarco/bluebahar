@@ -29,19 +29,18 @@ describe('ScraperService', () => {
   let repoFind: jest.MockedFunction<Repository<NoticeToMariners>['find']>;
   let getJobs: jest.MockedFunction<Queue['getJobs']>;
   let add: jest.MockedFunction<Queue['add']>;
-  let ping: jest.Mock<Promise<string>, []>;
   let service: ScraperService;
 
   beforeEach(() => {
-    repoFind = jest.fn<Repository<NoticeToMariners>['find']>();
-    getJobs = jest.fn<Queue['getJobs']>();
-    add = jest.fn<Queue['add']>();
-    ping = jest.fn<Promise<string>, []>().mockResolvedValue('PONG');
+    repoFind = jest.fn() as jest.MockedFunction<
+      Repository<NoticeToMariners>['find']
+    >;
+    getJobs = jest.fn() as jest.MockedFunction<Queue['getJobs']>;
+    add = jest.fn() as jest.MockedFunction<Queue['add']>;
 
     const queue = {
       add,
       getJobs,
-      client: Promise.resolve({ ping }),
     } as unknown as Queue;
     const config = {
       getOrThrow: jest.fn(() => 2),
@@ -55,11 +54,6 @@ describe('ScraperService', () => {
 
     listNoticeLinksMock.mockReset();
     captureExceptionMock.mockReset();
-  });
-
-  it('pings Redis through the BullMQ client', async () => {
-    await expect(service.pingRedis()).resolves.toBe(true);
-    expect(ping).toHaveBeenCalledTimes(1);
   });
 
   it('enqueues only unseen, non-in-flight notices up to the configured batch size', async () => {

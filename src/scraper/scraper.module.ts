@@ -4,6 +4,7 @@ import { ScraperService } from './scraper.service';
 import { NoticeToMariners } from './entities/notice-to-mariners.entity';
 import { ScraperProcessor } from './scraper.processor';
 import { BullModule } from '@nestjs/bullmq';
+import { RedisHealthIndicator } from '../common/health/redis-health.indicator';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { BullModule } from '@nestjs/bullmq';
       },
     }),
   ],
-  providers: [ScraperService, ScraperProcessor],
-  exports: [ScraperService],
+  providers: [ScraperService, ScraperProcessor, RedisHealthIndicator],
+  exports: [ScraperService, RedisHealthIndicator],
 })
 export class ScraperModule {}

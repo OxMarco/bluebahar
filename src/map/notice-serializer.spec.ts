@@ -134,4 +134,153 @@ describe('toNoticeDto', () => {
     expect(dto.activeTo).toBeNull();
     expect(dto.distance).toBeNull();
   });
+
+  describe('representativePoint', () => {
+    it('returns the first valid coordinate as latitude/longitude', () => {
+      const dto = toNoticeDto(
+        makeNotice([
+          {
+            label: 'Wreck',
+            geometryType: 'point',
+            points: [{ lat: 35.9, long: 14.5 }],
+          },
+        ]),
+      );
+
+      expect(dto.representativePoint).toEqual({
+        latitude: 35.9,
+        longitude: 14.5,
+      });
+    });
+
+    it('walks across parts to find the first coordinate', () => {
+      const dto = toNoticeDto(
+        makeNotice([
+          { label: 'Empty', geometryType: 'line', points: [] },
+          {
+            label: 'Cable',
+            geometryType: 'line',
+            points: [
+              { lat: 35.91, long: 14.51 },
+              { lat: 35.92, long: 14.52 },
+            ],
+          },
+        ]),
+      );
+
+      expect(dto.representativePoint).toEqual({
+        latitude: 35.91,
+        longitude: 14.51,
+      });
+    });
+
+    it('returns null when no part has a usable point', () => {
+      const dto = toNoticeDto(makeNotice([]));
+      expect(dto.representativePoint).toBeNull();
+    });
+  });
+
+  describe('boundingCircle', () => {
+    it('uses the notice distance as the radius for a single point hazard', () => {
+      const dto = toNoticeDto(
+        makeNotice(
+          [
+            {
+              label: 'Wreck',
+              geometryType: 'point',
+              points: [{ lat: 35.9, long: 14.5 }],
+            },
+          ],
+          { distance: 300 },
+        ),
+      );
+
+      expect(dto.boundingCircle).toEqual({
+        center: { latitude: 35.9, longitude: 14.5 },
+        radiusMetres: 300,
+      });
+    });
+
+    it('returns a zero-radius circle for a single point with no safety berth', () => {
+      const dto = toNoticeDto(
+        makeNotice([
+          {
+            label: 'Point',
+            geometryType: 'point',
+            points: [{ lat: 35.9, long: 14.5 }],
+          },
+        ]),
+      );
+
+      expect(dto.boundingCircle).toEqual({
+        center: { latitude: 35.9, longitude: 14.5 },
+        radiusMetres: 0,
+      });
+    });
+
+    it('encloses every polygon vertex inside the circle', () => {
+      const dto = toNoticeDto(
+        makeNotice([
+          {
+            label: 'Swimming zone',
+            geometryType: 'polygon',
+            points: [
+              { lat: 35.9, long: 14.5 },
+              { lat: 35.91, long: 14.51 },
+              { lat: 35.9, long: 14.52 },
+            ],
+          },
+        ]),
+      );
+
+      const circle = dto.boundingCircle;
+      expect(circle).not.toBeNull();
+      expect(circle!.center.latitude).toBeCloseTo(35.905, 4);
+      expect(circle!.center.longitude).toBeCloseTo(14.51, 4);
+      // ~1.1km diagonal across the polygon; assert a reasonable lower bound.
+      expect(circle!.radiusMetres).toBeGreaterThan(500);
+    });
+
+    it('does not apply the safety berth to pure polygon notices', () => {
+      const withDistance = toNoticeDto(
+        makeNotice(
+          [
+            {
+              label: 'Zone',
+              geometryType: 'polygon',
+              points: [
+                { lat: 35.9, long: 14.5 },
+                { lat: 35.91, long: 14.51 },
+                { lat: 35.9, long: 14.52 },
+              ],
+            },
+          ],
+          { distance: 500 },
+        ),
+      );
+      const withoutDistance = toNoticeDto(
+        makeNotice([
+          {
+            label: 'Zone',
+            geometryType: 'polygon',
+            points: [
+              { lat: 35.9, long: 14.5 },
+              { lat: 35.91, long: 14.51 },
+              { lat: 35.9, long: 14.52 },
+            ],
+          },
+        ]),
+      );
+
+      expect(withDistance.boundingCircle!.radiusMetres).toBeCloseTo(
+        withoutDistance.boundingCircle!.radiusMetres,
+        6,
+      );
+    });
+
+    it('returns null when no part has any coordinates', () => {
+      const dto = toNoticeDto(makeNotice([]));
+      expect(dto.boundingCircle).toBeNull();
+    });
+  });
 });
