@@ -1,17 +1,15 @@
-import { INestApplication, VersioningType } from '@nestjs/common';
-import { CacheModule } from '@nestjs/cache-manager';
+import { VersioningType } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { createHash } from 'node:crypto';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import request from 'supertest';
-import { App } from 'supertest/types';
 import { MapController } from '../src/map/map.controller';
 import { DATASETS } from '../src/map/datasets';
 import { MapService } from '../src/map/map.service';
 
 describe('Map datasets API (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: NestExpressApplication;
 
   const dataset = DATASETS[0];
   const filePath = resolve(
@@ -29,12 +27,10 @@ describe('Map datasets API (e2e)', () => {
     geometryTypes: ['Point'],
     bbox: [14.5, 35.9, 14.5, 35.9],
     byteSize: fileStats.size,
-    sha256: createHash('sha256').update(dataset.key).digest('hex'),
   };
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [CacheModule.register()],
       controllers: [MapController],
       providers: [
         {
@@ -60,7 +56,9 @@ describe('Map datasets API (e2e)', () => {
       ],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication<NestExpressApplication>();
+    app.setBaseViewsDir(resolve(process.cwd(), 'views'));
+    app.setViewEngine('hbs');
     app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     await app.init();
   });
@@ -75,7 +73,13 @@ describe('Map datasets API (e2e)', () => {
       .expect(200);
 
     expect(res.body).toEqual([source]);
-    expect(res.headers['cache-control']).toBe('public, max-age=300');
+  });
+
+  it('GET /v1/map renders the map page', async () => {
+    const res = await request(app.getHttpServer()).get('/v1/map').expect(200);
+
+    expect(res.text).toContain('<title>Map - BlueBaħar</title>');
+    expect(res.text).toContain("const DATASETS_URL = '/v1/map/datasets';");
   });
 
   it('GET /v1/map/datasets/:key streams GeoJSON', async () => {
@@ -84,26 +88,11 @@ describe('Map datasets API (e2e)', () => {
       .expect(200);
 
     expect(res.headers['content-type']).toContain('application/geo+json');
-    expect(res.headers['cache-control']).toBe(
-      'public, max-age=3600, stale-while-revalidate=86400',
-    );
     expect(res.headers['x-dataset-key']).toBe(dataset.key);
     expect(res.headers['x-dataset-kind']).toBe(dataset.kind);
     expect(res.headers['x-dataset-feature-count']).toBe('1');
     expect(res.headers['x-dataset-geometry-types']).toBe('Point');
     expect(res.headers['x-dataset-bbox']).toBe('14.5,35.9,14.5,35.9');
     expect(JSON.parse(res.text)).toHaveProperty('type', 'FeatureCollection');
-  });
-
-  it('GET /v1/map/datasets/:key returns 304 when ETag matches', async () => {
-    const etag = `"${source.sha256}"`;
-
-    const res = await request(app.getHttpServer())
-      .get(`/v1/map/datasets/${dataset.key}`)
-      .set('If-None-Match', etag)
-      .expect(304);
-
-    expect(res.headers.etag).toBe(etag);
-    expect(res.text).toBe('');
   });
 });

@@ -21,9 +21,6 @@ export const configValidationSchema = Joi.object({
   // OpenAI
   OPENAI_API_KEY: Joi.string().required(),
 
-  // Cache expiration time in milliseconds
-  CACHE_TTL: Joi.number().positive().required(),
-
   // Public API throttling window and request limit
   THROTTLE_TTL_MS: Joi.number().integer().positive().default(60_000),
   THROTTLE_LIMIT: Joi.number().integer().positive().default(120),

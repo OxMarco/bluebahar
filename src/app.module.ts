@@ -7,7 +7,6 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bullmq';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { TerminusModule } from '@nestjs/terminus';
-import { CacheModule } from '@nestjs/cache-manager';
 import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { configValidationSchema } from './config.schema';
 import { ScraperModule } from './scraper/scraper.module';
@@ -64,14 +63,6 @@ import { TypeOrmNotFoundExceptionFilter } from './common/filters/entity-not-foun
       inject: [ConfigService],
     }),
     EventEmitterModule.forRoot(),
-    CacheModule.registerAsync({
-      isGlobal: true,
-      imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        ttl: configService.getOrThrow<number>('CACHE_TTL'), // milliseconds
-      }),
-      inject: [ConfigService],
-    }),
     TerminusModule.forRoot(),
     SentryModule.forRoot(),
     ScraperModule,

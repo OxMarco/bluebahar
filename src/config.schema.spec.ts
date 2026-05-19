@@ -12,7 +12,6 @@ const validEnv = {
   REDIS_HOST: 'redis',
   REDIS_PORT: 6379,
   OPENAI_API_KEY: 'sk-test',
-  CACHE_TTL: 300000,
   THROTTLE_TTL_MS: 60_000,
   THROTTLE_LIMIT: 120,
   NOTICE_SCRAPE_BATCH_SIZE: 10,
@@ -37,7 +36,9 @@ describe('configValidationSchema', () => {
   });
 
   it('requires infrastructure and application secrets', () => {
-    const { DB_PASSWORD: _pwd, OPENAI_API_KEY: _key, ...incomplete } = validEnv;
+    const incomplete: Record<string, unknown> = { ...validEnv };
+    delete incomplete.DB_PASSWORD;
+    delete incomplete.OPENAI_API_KEY;
 
     const { error } = validate(incomplete);
 
@@ -46,12 +47,11 @@ describe('configValidationSchema', () => {
     );
   });
 
-  it('rejects invalid ports, cache settings, batch sizes, and sample rates', () => {
+  it('rejects invalid ports, batch sizes, and sample rates', () => {
     const { error } = validate({
       ...validEnv,
       DB_PORT: 70_000,
       PORT: 70_001,
-      CACHE_TTL: -1,
       THROTTLE_TTL_MS: 0,
       THROTTLE_LIMIT: 0,
       NOTICE_SCRAPE_BATCH_SIZE: 0,
@@ -62,7 +62,6 @@ describe('configValidationSchema', () => {
       expect.arrayContaining([
         'DB_PORT',
         'PORT',
-        'CACHE_TTL',
         'THROTTLE_TTL_MS',
         'THROTTLE_LIMIT',
         'NOTICE_SCRAPE_BATCH_SIZE',

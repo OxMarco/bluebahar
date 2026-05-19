@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Render } from '@nestjs/common';
+import { Controller, Get, Render } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import {
   DiskHealthIndicator,
@@ -69,14 +69,12 @@ export class AppController {
 
   @Get('/v1/health/live')
   @SkipThrottle()
-  @Header('Cache-Control', 'no-store')
   live() {
     return { status: 'ok' };
   }
 
   @Get('/v1/health/ready')
   @SkipThrottle()
-  @Header('Cache-Control', 'no-store')
   @HealthCheck()
   ready() {
     return this.health.check([
@@ -93,7 +91,6 @@ export class AppController {
 
   @Get('/v1/health/diagnostics')
   @SkipThrottle()
-  @Header('Cache-Control', 'no-store')
   @HealthCheck()
   diagnostics() {
     return this.health.check([

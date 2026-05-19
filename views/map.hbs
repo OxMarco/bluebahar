@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Map - BlueBaħar</title>
+
+  <meta name="description" content="BlueBaħar map layers around Malta." />
+  <meta name="author" content="Impossible Labs" />
+  <meta name="robots" content="index, follow" />
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="canonical" href="https://bluebahar.com/v1/map" />
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIINfQBDZ2F6r0a3vXA0QBrS04Zr7Z0w3iM="
+    crossorigin=""
+  />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Montserrat:wght@300;400;500;600;700;800&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sky: '#78C3EA',
+            ink: '#152051',
+            paper: '#FEFEFE',
+            good: '#5C946E',
+            warning: '#FFC857',
+            bad: '#D80C2B',
+          },
+          fontFamily: {
+            display: ['Montserrat', 'sans-serif'],
+            body: ['Roboto', 'sans-serif'],
+            brand: ['Fredoka', 'sans-serif'],
+          },
+          boxShadow: {
+            soft: '0 24px 80px -36px rgba(21, 32, 81, 0.55)',
+            glow: '0 18px 50px -28px rgba(255, 255, 255, 0.95)',
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    :root {
+      --ink: #152051;
+      --sky: #78C3EA;
+      --paper: #FEFEFE;
+      --muted: #D9DEE8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+    }
+
+    body {
+      overflow: hidden;
+      color: var(--ink);
+      background: var(--sky);
+      font-family: 'Roboto', sans-serif;
+      text-rendering: geometricPrecision;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    #map {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      background: #cfe8ef;
+    }
+
+    .map-shell::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(21, 32, 81, 0.14), rgba(21, 32, 81, 0) 28%),
+        linear-gradient(0deg, rgba(21, 32, 81, 0.08), rgba(21, 32, 81, 0) 34%);
+    }
+
+    .brand-bar,
+    .layer-toggle,
+    .layers-panel {
+      position: fixed;
+      z-index: 4;
+    }
+
+    .brand-bar {
+      top: max(16px, env(safe-area-inset-top));
+      left: max(16px, env(safe-area-inset-left));
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+      max-width: calc(100vw - 32px);
+      padding: 10px 14px 10px 10px;
+      border: 1px solid rgba(254, 254, 254, 0.58);
+      border-radius: 18px;
+      color: var(--paper);
+      background: rgba(21, 32, 81, 0.72);
+      box-shadow: 0 18px 48px -28px rgba(21, 32, 81, 0.9);
+      backdrop-filter: blur(16px);
+      text-decoration: none;
+    }
+
+    .brand-bar:focus-visible,
+    .layer-toggle:focus-visible,
+    .chip:focus-visible,
+    .popup-link:focus-visible {
+      outline: 3px solid rgba(255, 200, 87, 0.92);
+      outline-offset: 3px;
+    }
+
+    .brand-logo {
+      width: 42px;
+      height: 42px;
+      flex: 0 0 auto;
+      border-radius: 14px;
+      background: rgba(254, 254, 254, 0.24);
+      box-shadow: 0 16px 34px -24px rgba(254, 254, 254, 0.92);
+    }
+
+    .brand-copy {
+      min-width: 0;
+      line-height: 1;
+    }
+
+    .brand-copy strong {
+      display: block;
+      overflow: hidden;
+      font-family: 'Fredoka', sans-serif;
+      font-size: 21px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .brand-copy small {
+      display: block;
+      margin-top: 3px;
+      color: rgba(254, 254, 254, 0.68);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .layer-toggle {
+      top: max(16px, env(safe-area-inset-top));
+      right: max(16px, env(safe-area-inset-right));
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 48px;
+      border: 1px solid rgba(254, 254, 254, 0.72);
+      border-radius: 999px;
+      padding: 0 16px 0 13px;
+      color: var(--ink);
+      background: rgba(254, 254, 254, 0.94);
+      box-shadow: 0 18px 44px -28px rgba(21, 32, 81, 0.82);
+      cursor: pointer;
+      transition:
+        transform 0.2s ease,
+        background-color 0.2s ease,
+        box-shadow 0.2s ease;
+    }
+
+    .layer-toggle:hover {
+      background: #fff;
+      box-shadow: 0 20px 44px -24px rgba(21, 32, 81, 0.75);
+      transform: translateY(-1px);
+    }
+
+    .layer-toggle-icon {
+      display: grid;
+      width: 25px;
+      height: 25px;
+      place-items: center;
+      color: var(--ink);
+    }
+
+    .layer-toggle-label {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .active-count {
+      display: grid;
+      min-width: 22px;
+      height: 22px;
+      place-items: center;
+      border-radius: 999px;
+      color: var(--paper);
+      background: var(--ink);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .layers-panel {
+      right: max(16px, env(safe-area-inset-right));
+      bottom: max(16px, env(safe-area-inset-bottom));
+      width: min(380px, calc(100vw - 32px));
+      max-height: min(620px, calc(100vh - 96px));
+      overflow: hidden;
+      border: 1px solid rgba(254, 254, 254, 0.7);
+      border-radius: 26px;
+      background: rgba(254, 254, 254, 0.94);
+      box-shadow: 0 28px 90px -42px rgba(21, 32, 81, 0.9);
+      backdrop-filter: blur(18px);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(18px) scale(0.98);
+      transform-origin: bottom right;
+      transition:
+        opacity 0.22s ease,
+        transform 0.22s ease;
+    }
+
+    .layers-panel.is-open {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0) scale(1);
+    }
+
+    .panel-inner {
+      display: flex;
+      max-height: inherit;
+      flex-direction: column;
+      padding: 22px;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .panel-status {
+      margin-top: 5px;
+      color: rgba(21, 32, 81, 0.62);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .panel-action {
+      border: 0;
+      border-radius: 999px;
+      padding: 8px 11px;
+      color: var(--ink);
+      background: rgba(21, 32, 81, 0.08);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .panel-action:hover {
+      background: rgba(21, 32, 81, 0.12);
+    }
+
+    .chip-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+      overflow-y: auto;
+      padding-bottom: 2px;
+      scrollbar-width: thin;
+    }
+
+    .chip {
+      --layer-color: #2563EB;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 40px;
+      max-width: 100%;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      padding: 8px 14px;
+      color: var(--ink);
+      background: rgba(21, 32, 81, 0.06);
+      cursor: pointer;
+      transition:
+        transform 0.18s ease,
+        background-color 0.18s ease,
+        border-color 0.18s ease,
+        color 0.18s ease,
+        opacity 0.18s ease;
+    }
+
+    .chip:hover {
+      transform: translateY(-1px);
+    }
+
+    .chip[aria-pressed='true'] {
+      border-color: var(--layer-color);
+      color: var(--paper);
+      background: var(--layer-color);
+    }
+
+    .chip.is-loading {
+      opacity: 0.66;
+      cursor: wait;
+    }
+
+    .chip-swatch {
+      width: 10px;
+      height: 10px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: var(--layer-color);
+      box-shadow: 0 0 0 3px rgba(254, 254, 254, 0.72);
+    }
+
+    .chip[aria-pressed='true'] .chip-swatch {
+      background: var(--paper);
+      box-shadow: 0 0 0 3px rgba(254, 254, 254, 0.2);
+    }
+
+    .chip-name {
+      overflow-wrap: anywhere;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.2;
+      text-align: left;
+    }
+
+    .leaflet-control-attribution {
+      font-size: 10px;
+    }
+
+    .leaflet-popup-content-wrapper {
+      border-radius: 16px;
+      color: var(--ink);
+      box-shadow: 0 18px 48px -28px rgba(21, 32, 81, 0.82);
+    }
+
+    .leaflet-popup-content {
+      width: min(280px, 70vw) !important;
+      margin: 16px;
+    }
+
+    .popup-kicker {
+      color: rgba(21, 32, 81, 0.56);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .popup-title {
+      margin: 5px 0 0;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 17px;
+      font-weight: 800;
+      line-height: 1.15;
+    }
+
+    .popup-copy {
+      margin: 8px 0 0;
+      color: rgba(21, 32, 81, 0.74);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .popup-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .popup-tag {
+      border-radius: 999px;
+      padding: 4px 8px;
+      color: var(--ink);
+      background: rgba(21, 32, 81, 0.08);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .popup-details {
+      display: grid;
+      gap: 7px;
+      margin-top: 12px;
+    }
+
+    .popup-detail {
+      display: grid;
+      gap: 2px;
+      padding-top: 7px;
+      border-top: 1px solid rgba(21, 32, 81, 0.1);
+    }
+
+    .popup-detail-label {
+      color: rgba(21, 32, 81, 0.52);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .popup-detail-value {
+      color: rgba(21, 32, 81, 0.78);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .popup-link {
+      display: inline-flex;
+      margin-top: 12px;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 800;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .map-loading {
+      position: fixed;
+      left: 50%;
+      bottom: max(20px, env(safe-area-inset-bottom));
+      z-index: 3;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 40px;
+      max-width: calc(100vw - 32px);
+      border-radius: 999px;
+      padding: 8px 14px;
+      color: var(--ink);
+      background: rgba(254, 254, 254, 0.92);
+      box-shadow: 0 18px 44px -28px rgba(21, 32, 81, 0.82);
+      transform: translateX(-50%);
+    }
+
+    .map-loading[hidden] {
+      display: none;
+    }
+
+    .map-loading-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--good, #5C946E);
+      animation: pulse 1.3s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 0.35;
+        transform: scale(0.8);
+      }
+
+      50% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    @media (max-width: 640px) {
+      .brand-bar {
+        max-width: calc(100vw - 106px);
+        padding: 8px 10px 8px 8px;
+        border-radius: 16px;
+      }
+
+      .brand-logo {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+      }
+
+      .brand-copy strong {
+        font-size: 18px;
+      }
+
+      .brand-copy small {
+        display: none;
+      }
+
+      .layer-toggle {
+        width: 48px;
+        padding: 0;
+        justify-content: center;
+      }
+
+      .layer-toggle-label,
+      .active-count {
+        display: none;
+      }
+
+      .layers-panel {
+        right: 0;
+        bottom: 0;
+        left: 0;
+        width: 100vw;
+        max-height: min(72vh, 620px);
+        border-right: 0;
+        border-bottom: 0;
+        border-left: 0;
+        border-radius: 24px 24px 0 0;
+        transform: translateY(26px);
+        transform-origin: bottom center;
+      }
+
+      .panel-inner {
+        padding: 20px 18px max(20px, env(safe-area-inset-bottom));
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="map-shell">
+    <div id="map" aria-label="BlueBaħar map"></div>
+
+    <a href="/" class="brand-bar" aria-label="BlueBaħar home">
+      <img src="/logo.png" alt="" class="brand-logo" draggable="false" />
+      <span class="brand-copy">
+        <strong>BlueBaħar</strong>
+        <small>{{version}} map</small>
+      </span>
+    </a>
+
+    <button id="layerToggle" class="layer-toggle" type="button" aria-expanded="false" aria-controls="layersPanel">
+      <span class="layer-toggle-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="23" height="23" fill="none">
+          <path d="M12 3.5 3.75 8 12 12.5 20.25 8 12 3.5Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+          <path d="m3.75 12 8.25 4.5L20.25 12" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="m3.75 16 8.25 4.5L20.25 16" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span class="layer-toggle-label">Layers</span>
+      <span id="activeCount" class="active-count">0</span>
+    </button>
+
+    <aside id="layersPanel" class="layers-panel" aria-label="Map layers">
+      <div class="panel-inner">
+        <div class="panel-head">
+          <div>
+            <h1 class="panel-title">Layers</h1>
+            <div id="panelStatus" class="panel-status" role="status">Loading layers</div>
+          </div>
+          <button id="clearLayers" class="panel-action" type="button">Clear</button>
+        </div>
+        <div id="chipGrid" class="chip-grid"></div>
+      </div>
+    </aside>
+
+    <div id="mapLoading" class="map-loading" role="status">
+      <span class="map-loading-dot" aria-hidden="true"></span>
+      <span id="mapLoadingText">Loading map</span>
+    </div>
+  </div>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+
+  <script>
+    (function () {
+      const DATASETS_URL = '/v1/map/datasets';
+      const DATASET_URL = (key) => `/v1/map/datasets/${encodeURIComponent(key)}`;
+      const ACTIVE_LAYERS_STORAGE_KEY = 'web-map-active-layers:v1';
+      const MALTA_CENTER = [35.9375, 14.3754];
+      const MALTA_BOUNDS = L.latLngBounds([34.5, 13], [37, 16]);
+      const LAYER_PALETTE = [
+        '#EA580C',
+        '#FACC15',
+        '#84CC16',
+        '#16A34A',
+        '#0D9488',
+        '#0891B2',
+        '#2563EB',
+        '#7C3AED',
+        '#C026D3',
+        '#DB2777',
+        '#92400E',
+        '#475569',
+      ];
+
+      const map = L.map('map', {
+        zoomControl: false,
+        minZoom: 8,
+        maxBounds: L.latLngBounds([34.15, 12.45], [37.25, 16.65]),
+        maxBoundsViscosity: 0.72,
+      }).setView(MALTA_CENTER, 10);
+
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(map);
+
+      const layersPanel = document.getElementById('layersPanel');
+      const layerToggle = document.getElementById('layerToggle');
+      const chipGrid = document.getElementById('chipGrid');
+      const panelStatus = document.getElementById('panelStatus');
+      const clearLayers = document.getElementById('clearLayers');
+      const activeCount = document.getElementById('activeCount');
+      const mapLoading = document.getElementById('mapLoading');
+      const mapLoadingText = document.getElementById('mapLoadingText');
+
+      let datasets = [];
+      let colorMap = new Map();
+      const activeLayerKeys = new Set(readStoredLayers());
+      const layerEntries = new Map();
+      const layerRequests = new Map();
+      const chipByKey = new Map();
+
+      function setPanelOpen(open) {
+        layersPanel.classList.toggle('is-open', open);
+        layerToggle.setAttribute('aria-expanded', String(open));
+      }
+
+      function setLoading(text) {
+        mapLoadingText.textContent = text;
+        mapLoading.hidden = false;
+      }
+
+      function clearLoading() {
+        mapLoading.hidden = true;
+      }
+
+      function readStoredLayers() {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(ACTIVE_LAYERS_STORAGE_KEY) || '[]');
+          return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [];
+        } catch {
+          return [];
+        }
+      }
+
+      function storeActiveLayers() {
+        localStorage.setItem(ACTIVE_LAYERS_STORAGE_KEY, JSON.stringify(Array.from(activeLayerKeys)));
+      }
+
+      function hashKey(key) {
+        let h = 2166136261;
+        for (let i = 0; i < key.length; i += 1) {
+          h ^= key.charCodeAt(i);
+          h = Math.imul(h, 16777619) >>> 0;
+        }
+        return h;
+      }
+
+      function buildLayerColorMap(keys) {
+        const sorted = keys.slice().sort();
+        const out = new Map();
+        const used = new Set();
+        for (const key of sorted) {
+          let idx = hashKey(key) % LAYER_PALETTE.length;
+          let probes = 0;
+          while (used.has(idx) && probes < LAYER_PALETTE.length) {
+            idx = (idx + 1) % LAYER_PALETTE.length;
+            probes += 1;
+          }
+          used.add(idx);
+          out.set(key, LAYER_PALETTE[idx]);
+        }
+        return out;
+      }
+
+      function setChipState(key, state) {
+        const chip = chipByKey.get(key);
+        if (!chip) return;
+        const isActive = activeLayerKeys.has(key);
+        const dataset = datasets.find((item) => item.key === key);
+        chip.setAttribute('aria-pressed', String(isActive));
+        if (dataset) {
+          chip.setAttribute('aria-label', `${isActive ? 'Hide' : 'Show'} ${dataset.name} layer`);
+        }
+        chip.classList.toggle('is-loading', state === 'loading');
+        if (state === 'error') {
+          chip.title = 'Layer failed to load';
+        } else {
+          chip.removeAttribute('title');
+        }
+      }
+
+      function updateStatus() {
+        const count = activeLayerKeys.size;
+        activeCount.textContent = String(count);
+        clearLayers.disabled = count === 0;
+        panelStatus.textContent = count === 0 ? 'No layers visible' : `${count} visible`;
+      }
+
+      function fitVisibleBounds() {
+        const bounds = L.latLngBounds([]);
+        for (const key of activeLayerKeys) {
+          const entry = layerEntries.get(key);
+          if (!entry || !map.hasLayer(entry.layer)) continue;
+          const layerBounds = entry.layer.getBounds ? entry.layer.getBounds() : null;
+          if (layerBounds && layerBounds.isValid()) bounds.extend(layerBounds);
+        }
+        if (bounds.isValid()) map.fitBounds(bounds.pad(0.15), { animate: true, maxZoom: 13 });
+        else map.fitBounds(MALTA_BOUNDS, { animate: true });
+      }
+
+      function textEl(tag, className, text) {
+        const el = document.createElement(tag);
+        if (className) el.className = className;
+        el.textContent = text;
+        return el;
+      }
+
+      function safeUrl(value) {
+        if (typeof value !== 'string') return null;
+        try {
+          const url = new URL(value, window.location.origin);
+          return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
+        } catch {
+          return null;
+        }
+      }
+
+      function popupContent(feature, dataset) {
+        const props = feature.properties || {};
+        const root = document.createElement('div');
+        root.appendChild(textEl('div', 'popup-kicker', dataset.name));
+
+        const title = typeof props.title === 'string' && props.title.trim()
+          ? props.title
+          : dataset.name;
+        root.appendChild(textEl('h2', 'popup-title', title));
+
+        if (typeof props.subtitle === 'string' && props.subtitle.trim()) {
+          root.appendChild(textEl('p', 'popup-copy', props.subtitle));
+        }
+
+        if (typeof props.description === 'string' && props.description.trim()) {
+          root.appendChild(textEl('p', 'popup-copy', props.description));
+        }
+
+        if (Array.isArray(props.tags) && props.tags.length > 0) {
+          const tags = document.createElement('div');
+          tags.className = 'popup-tags';
+          props.tags.slice(0, 6).forEach((tag) => {
+            if (typeof tag === 'string' && tag.trim()) tags.appendChild(textEl('span', 'popup-tag', tag));
+          });
+          if (tags.children.length > 0) root.appendChild(tags);
+        }
+
+        if (Array.isArray(props.details) && props.details.length > 0) {
+          const details = document.createElement('div');
+          details.className = 'popup-details';
+          props.details.slice(0, 4).forEach((detail) => {
+            if (!detail || typeof detail !== 'object') return;
+            const label = typeof detail.label === 'string' ? detail.label : '';
+            const value = typeof detail.value === 'string' ? detail.value : '';
+            if (!label || !value) return;
+            const item = document.createElement('div');
+            item.className = 'popup-detail';
+            item.appendChild(textEl('span', 'popup-detail-label', label));
+            item.appendChild(textEl('span', 'popup-detail-value', value));
+            details.appendChild(item);
+          });
+          if (details.children.length > 0) root.appendChild(details);
+        }
+
+        const directUrl = safeUrl(props.sourceUrl);
+        const linkUrl = directUrl || (
+          Array.isArray(props.links)
+            ? props.links.map((link) => safeUrl(link && link.url)).find(Boolean)
+            : null
+        );
+        if (linkUrl) {
+          const link = document.createElement('a');
+          link.className = 'popup-link';
+          link.href = linkUrl;
+          link.target = '_blank';
+          link.rel = 'noopener';
+          link.textContent = 'Open source';
+          root.appendChild(link);
+        }
+
+        return root;
+      }
+
+      function layerStyle(color) {
+        return {
+          color,
+          weight: 2,
+          opacity: 0.9,
+          fillColor: color,
+          fillOpacity: 0.2,
+        };
+      }
+
+      function createLayer(dataset, geojson) {
+        const color = colorMap.get(dataset.key) || '#2563EB';
+        return L.geoJSON(geojson, {
+          style: layerStyle(color),
+          pointToLayer: function (_feature, latlng) {
+            return L.circleMarker(latlng, {
+              radius: 6,
+              color: '#FEFEFE',
+              weight: 2,
+              fillColor: color,
+              fillOpacity: 0.95,
+            });
+          },
+          onEachFeature: function (feature, layer) {
+            if (dataset.kind !== 'interactive' || !feature.properties) return;
+            layer.bindPopup(popupContent(feature, dataset), {
+              closeButton: true,
+              maxWidth: 320,
+            });
+          },
+        });
+      }
+
+      async function fetchJson(url) {
+        const response = await fetch(url, { headers: { Accept: 'application/json, application/geo+json' } });
+        if (!response.ok) throw new Error(`Request failed with ${response.status}`);
+        return response.json();
+      }
+
+      async function ensureLayer(dataset) {
+        const existing = layerEntries.get(dataset.key);
+        if (existing) {
+          existing.layer.addTo(map);
+          return;
+        }
+
+        const pending = layerRequests.get(dataset.key);
+        if (pending) {
+          await pending;
+          const loaded = layerEntries.get(dataset.key);
+          if (loaded) loaded.layer.addTo(map);
+          return;
+        }
+
+        const request = (async () => {
+          setChipState(dataset.key, 'loading');
+          setLoading(`Loading ${dataset.name}`);
+          const geojson = await fetchJson(DATASET_URL(dataset.key));
+          const layer = createLayer(dataset, geojson);
+          layerEntries.set(dataset.key, { dataset, layer });
+          if (activeLayerKeys.has(dataset.key)) layer.addTo(map);
+          setChipState(dataset.key, 'loaded');
+        })();
+
+        layerRequests.set(dataset.key, request);
+        try {
+          await request;
+        } catch (err) {
+          activeLayerKeys.delete(dataset.key);
+          setChipState(dataset.key, 'error');
+          panelStatus.textContent = err instanceof Error ? err.message : 'Layer failed to load';
+          throw err;
+        } finally {
+          layerRequests.delete(dataset.key);
+          clearLoading();
+          updateStatus();
+        }
+      }
+
+      async function toggleDataset(dataset) {
+        if (activeLayerKeys.has(dataset.key)) {
+          activeLayerKeys.delete(dataset.key);
+          const entry = layerEntries.get(dataset.key);
+          if (entry) map.removeLayer(entry.layer);
+          setChipState(dataset.key, 'idle');
+          storeActiveLayers();
+          updateStatus();
+          return;
+        }
+
+        activeLayerKeys.add(dataset.key);
+        setChipState(dataset.key, 'loading');
+        storeActiveLayers();
+        updateStatus();
+        try {
+          await ensureLayer(dataset);
+          fitVisibleBounds();
+        } catch {
+          storeActiveLayers();
+        }
+      }
+
+      function renderChips() {
+        chipGrid.replaceChildren();
+        chipByKey.clear();
+        datasets.forEach((dataset) => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'chip';
+          chip.style.setProperty('--layer-color', colorMap.get(dataset.key) || '#2563EB');
+          chip.setAttribute('aria-pressed', String(activeLayerKeys.has(dataset.key)));
+          chip.setAttribute('aria-label', `${activeLayerKeys.has(dataset.key) ? 'Hide' : 'Show'} ${dataset.name} layer`);
+
+          const swatch = document.createElement('span');
+          swatch.className = 'chip-swatch';
+          swatch.setAttribute('aria-hidden', 'true');
+
+          const name = document.createElement('span');
+          name.className = 'chip-name';
+          name.textContent = dataset.name;
+
+          chip.append(swatch, name);
+          chip.addEventListener('click', () => {
+            chip.setAttribute('aria-label', `${activeLayerKeys.has(dataset.key) ? 'Show' : 'Hide'} ${dataset.name} layer`);
+            toggleDataset(dataset);
+          });
+          chipByKey.set(dataset.key, chip);
+          chipGrid.appendChild(chip);
+        });
+      }
+
+      async function hydrateStoredLayers() {
+        const visibleDatasets = datasets.filter((dataset) => activeLayerKeys.has(dataset.key));
+        for (const dataset of visibleDatasets) {
+          try {
+            await ensureLayer(dataset);
+          } catch {
+            // The chip carries the failed state; continue hydrating the rest.
+          }
+        }
+        if (visibleDatasets.length > 0) fitVisibleBounds();
+        updateStatus();
+      }
+
+      async function loadCatalog() {
+        setLoading('Loading layers');
+        try {
+          datasets = await fetchJson(DATASETS_URL);
+          colorMap = buildLayerColorMap(datasets.map((dataset) => dataset.key));
+          for (const key of Array.from(activeLayerKeys)) {
+            if (!datasets.some((dataset) => dataset.key === key)) activeLayerKeys.delete(key);
+          }
+          renderChips();
+          updateStatus();
+          await hydrateStoredLayers();
+        } catch (err) {
+          panelStatus.textContent = err instanceof Error ? err.message : 'Layers unavailable';
+        } finally {
+          clearLoading();
+        }
+      }
+
+      layerToggle.addEventListener('click', () => {
+        setPanelOpen(!layersPanel.classList.contains('is-open'));
+      });
+
+      clearLayers.addEventListener('click', () => {
+        for (const key of Array.from(activeLayerKeys)) {
+          const entry = layerEntries.get(key);
+          if (entry) map.removeLayer(entry.layer);
+          activeLayerKeys.delete(key);
+          setChipState(key, 'idle');
+        }
+        storeActiveLayers();
+        updateStatus();
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') setPanelOpen(false);
+      });
+
+      map.whenReady(() => {
+        map.fitBounds(MALTA_BOUNDS, { animate: false });
+        loadCatalog();
+      });
+    })();
+  </script>
+</body>
+</html>

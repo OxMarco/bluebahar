@@ -12,8 +12,8 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppController } from '../src/app.controller';
 import { ImpitHealthIndicator } from '../src/common/health/impit-health.indicator';
+import { RedisHealthIndicator } from '../src/common/health/redis-health.indicator';
 import { DatasetCatalogService } from '../src/map/dataset-catalog.service';
-import { ScraperService } from '../src/scraper/scraper.service';
 
 describe('AppController (e2e)', () => {
   let app: NestExpressApplication;
@@ -29,7 +29,7 @@ describe('AppController (e2e)', () => {
         { provide: TypeOrmHealthIndicator, useValue: {} },
         { provide: ImpitHealthIndicator, useValue: {} },
         { provide: DiskHealthIndicator, useValue: {} },
-        { provide: ScraperService, useValue: {} },
+        { provide: RedisHealthIndicator, useValue: {} },
         { provide: DatasetCatalogService, useValue: {} },
       ],
     }).compile();
@@ -63,7 +63,6 @@ describe('AppController (e2e)', () => {
     const res = await request(httpServer()).get('/v1/health/live').expect(200);
 
     expect(res.body).toEqual({ status: 'ok' });
-    expect(res.headers['cache-control']).toBe('no-store');
   });
 
   it('GET / renders the public landing page', async () => {

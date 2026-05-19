@@ -31,6 +31,5 @@ a usable title.
 
 ## Runtime knobs
 
-- `CACHE_TTL`: in-memory cache TTL in milliseconds.
 - `THROTTLE_TTL_MS`: global public API throttle window in milliseconds, default `60000`.
 - `THROTTLE_LIMIT`: global public API requests per throttle window, default `120`.
