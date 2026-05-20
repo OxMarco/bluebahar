@@ -5,6 +5,7 @@ import type { Repository } from 'typeorm';
 import { ScraperService } from './scraper.service';
 import { NoticeToMariners } from './entities/notice-to-mariners.entity';
 import { listNoticeLinks, type PdfLink } from './parser/notice-to-mariners';
+import { Logs } from './entities/logs.entity';
 
 jest.mock('./parser/notice-to-mariners', () => ({
   listNoticeLinks: jest.fn(),
@@ -29,6 +30,7 @@ describe('ScraperService', () => {
   let repoFind: jest.MockedFunction<Repository<NoticeToMariners>['find']>;
   let getJobs: jest.MockedFunction<Queue['getJobs']>;
   let add: jest.MockedFunction<Queue['add']>;
+  let logsDelete: jest.MockedFunction<Repository<Logs>['delete']>;
   let service: ScraperService;
 
   beforeEach(() => {
@@ -37,6 +39,7 @@ describe('ScraperService', () => {
     >;
     getJobs = jest.fn() as jest.MockedFunction<Queue['getJobs']>;
     add = jest.fn() as jest.MockedFunction<Queue['add']>;
+    logsDelete = jest.fn() as jest.MockedFunction<Repository<Logs>['delete']>;
 
     const queue = {
       add,
@@ -46,8 +49,15 @@ describe('ScraperService', () => {
       getOrThrow: jest.fn(() => 2),
     } as unknown as ConfigService;
 
+    const logsRepo = {
+      create: jest.fn((entity: unknown) => entity),
+      save: jest.fn(),
+      delete: logsDelete,
+    } as unknown as Repository<Logs>;
+
     service = new ScraperService(
       { find: repoFind } as unknown as Repository<NoticeToMariners>,
+      logsRepo,
       queue,
       config,
     );
@@ -111,6 +121,31 @@ describe('ScraperService', () => {
     await expect(service.scrapeNoticeToMariners()).rejects.toThrow(error);
     expect(captureExceptionMock).toHaveBeenCalledWith(error, {
       tags: { scraper: 'notice-to-mariners' },
+    });
+  });
+
+  it('prunes logs older than the 14-day retention window', async () => {
+    logsDelete.mockResolvedValue({ affected: 3, raw: [] });
+    const before = Date.now() - 14 * 24 * 60 * 60 * 1000;
+
+    await expect(service.pruneOldLogs()).resolves.toEqual({ deleted: 3 });
+
+    const where = logsDelete.mock.calls[0]?.[0] as { createdAt: unknown };
+    const cutoff = (where.createdAt as { value: Date }).value;
+    // LessThan wraps the cutoff in a FindOperator; assert it's ~14 days back.
+    expect(cutoff.getTime()).toBeGreaterThanOrEqual(before - 5000);
+    expect(cutoff.getTime()).toBeLessThanOrEqual(
+      Date.now() - 14 * 24 * 60 * 60 * 1000 + 5000,
+    );
+  });
+
+  it('reports log-prune failures to Sentry before rethrowing', async () => {
+    const error = new Error('db unavailable');
+    logsDelete.mockRejectedValue(error);
+
+    await expect(service.pruneOldLogs()).rejects.toThrow(error);
+    expect(captureExceptionMock).toHaveBeenCalledWith(error, {
+      tags: { scraper: 'prune-logs' },
     });
   });
 });

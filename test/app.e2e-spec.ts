@@ -49,12 +49,19 @@ describe('AppController (e2e)', () => {
     const res = await request(httpServer()).get('/v1').expect(200);
 
     expect(res.body).toEqual({
-      name: 'BlueBahar API',
+      name: 'BlueBaħar API',
       version: 'v1',
       health: {
         live: '/v1/health/live',
         ready: '/v1/health/ready',
         diagnostics: '/v1/health/diagnostics',
+      },
+      map: {
+        notices: '/v1/map/notices',
+        noticeMetrics: '/v1/map/notices/metrics',
+        reportNotice: '/v1/map/notices/report/:id',
+        datasets: '/v1/map/datasets',
+        dataset: '/v1/map/datasets/:key',
       },
     });
   });

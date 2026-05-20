@@ -57,12 +57,19 @@ export class AppController {
   @Get('/v1')
   rootApi() {
     return {
-      name: 'BlueBahar API',
+      name: 'BlueBaħar API',
       version: 'v1',
       health: {
         live: '/v1/health/live',
         ready: '/v1/health/ready',
         diagnostics: '/v1/health/diagnostics',
+      },
+      map: {
+        notices: '/v1/map/notices',
+        noticeMetrics: '/v1/map/notices/metrics',
+        reportNotice: '/v1/map/notices/report/:id',
+        datasets: '/v1/map/datasets',
+        dataset: '/v1/map/datasets/:key',
       },
     };
   }

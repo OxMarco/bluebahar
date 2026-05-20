@@ -9,6 +9,6 @@ import { DatasetCatalogService } from './dataset-catalog.service';
   imports: [TypeOrmModule.forFeature([NoticeToMariners])],
   controllers: [MapController],
   providers: [MapService, DatasetCatalogService],
-  exports: [DatasetCatalogService],
+  exports: [DatasetCatalogService, MapService],
 })
 export class MapModule {}

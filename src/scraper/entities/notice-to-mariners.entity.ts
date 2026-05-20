@@ -77,6 +77,9 @@ export class NoticeToMariners {
   @Column({ default: false })
   needsReview!: boolean;
 
+  @Column({ default: 0 })
+  reports!: number;
+
   @CreateDateColumn()
   createdAt!: Date;
 }

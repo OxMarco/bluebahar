@@ -46,7 +46,6 @@ async function main() {
       const response = await fetch(dataset.sourceUrl, {
         headers: {
           accept: 'application/geo+json, application/json;q=0.9, */*;q=0.1',
-          'user-agent': 'BlueBahar dataset refresher',
         },
       });
       if (!response.ok) {

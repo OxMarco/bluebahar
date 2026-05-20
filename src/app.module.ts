@@ -15,6 +15,7 @@ import { AppController } from './app.controller';
 import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 import { TypeOrmNotFoundExceptionFilter } from './common/filters/entity-not-found.filter';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   controllers: [AppController],
@@ -67,6 +68,7 @@ import { TypeOrmNotFoundExceptionFilter } from './common/filters/entity-not-foun
     SentryModule.forRoot(),
     ScraperModule,
     MapModule,
+    AdminModule,
   ],
   providers: [
     // Sentry filter is registered first so it captures errors before other

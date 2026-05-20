@@ -7,7 +7,9 @@ import type { Job } from 'bullmq';
 import * as Sentry from '@sentry/nestjs';
 import OpenAI from 'openai';
 import { NoticeToMariners } from './entities/notice-to-mariners.entity';
+import { Logs } from './entities/logs.entity';
 import { extractNoticeFromPdf } from './parser/notice-to-mariners';
+import { LogType } from './log-type';
 
 export type NoticeJobData = { url: string };
 export type JobData = NoticeJobData;
@@ -21,6 +23,8 @@ export class ScraperProcessor extends WorkerHost {
     config: ConfigService,
     @InjectRepository(NoticeToMariners)
     private readonly noticeRepository: Repository<NoticeToMariners>,
+    @InjectRepository(Logs)
+    private readonly logsRepository: Repository<Logs>,
   ) {
     super();
     this.openai = new OpenAI({
@@ -67,6 +71,12 @@ export class ScraperProcessor extends WorkerHost {
     // several bunkering areas). Single-statement insert keeps it atomic —
     // partial inserts on retry would collide with unique(source, subKey).
     await this.noticeRepository.insert(parsed);
+
+    const log = this.logsRepository.create({
+      logType: LogType.NEW_NTM_AUTO,
+      description: `Added new NtM record sourced from URL ${url}`,
+    });
+    await this.logsRepository.save(log);
 
     // Records that failed geo-sanity / gazetteer lookup are persisted (hidden
     // from public getters) so a human can review them, but we still want a

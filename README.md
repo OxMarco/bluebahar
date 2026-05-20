@@ -1,13 +1,24 @@
-# BlueBahar
+# BlueBaħar
 
 Backend to scrape data about Maltese waters.
 
 ## Map API notes
 
-- `GET /v1/map/notices` and `GET /v1/map/notices/review` return `{ items, limit, offset, hasMore }`.
+- `GET /v1/map/notices` returns `{ items, limit, offset, hasMore }`.
 - `GET /v1/map/notices/metrics` returns public/review backlog counts, including active notices hidden pending review.
+- `POST /v1/map/notices/report/:id` lets the public flag a notice; it increments the notice's `reports` counter.
 - `GET /v1/map/datasets` includes each layer's `kind`, `geometryTypes`, and `bbox`.
 - `GET /v1/map/datasets/:key` supports `If-None-Match` / `304 Not Modified` via the dataset SHA-256 ETag.
+
+## Admin API notes
+
+Admin endpoints are unauthenticated for now — do not expose this service publicly without an auth layer in front.
+
+- `GET /v1/admin/notices/review` returns notices in the geo-sanity review queue (`{ items, limit, offset, hasMore }`).
+- `GET /v1/admin/notices/flagged?minReports=` returns notices with at least `minReports` user reports (default 1).
+- `GET /v1/admin/logs?logType=&since=` returns audit logs, newest first, optionally filtered by type and ISO `since` date. Logs older than 14 days are pruned daily by a midnight cron.
+- `POST /v1/admin/notices` manually creates a notice (skips the review queue).
+- `POST /v1/admin/notices/:id/approve` clears the review flag; `POST /v1/admin/notices/:id/dismiss-reports` resets the report counter; `DELETE /v1/admin/notices/:id` removes a notice.
 
 ## Dataset maintenance
 

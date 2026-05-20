@@ -3,6 +3,7 @@ import {
   DatasetCatalogService,
   type DatasetEntry,
 } from './dataset-catalog.service';
+import { NotFoundException } from '@nestjs/common';
 import { MapService } from './map.service';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
 import { NoticeKind } from '../scraper/notice-kind';
@@ -38,6 +39,7 @@ function makeNotice(
 describe('MapService', () => {
   let find: jest.MockedFunction<Repository<NoticeToMariners>['find']>;
   let count: jest.MockedFunction<Repository<NoticeToMariners>['count']>;
+  let increment: jest.MockedFunction<Repository<NoticeToMariners>['increment']>;
   let list: jest.MockedFunction<DatasetCatalogService['list']>;
   let requireEntry: jest.MockedFunction<DatasetCatalogService['requireEntry']>;
   let service: MapService;
@@ -49,13 +51,16 @@ describe('MapService', () => {
     count = jest.fn() as jest.MockedFunction<
       Repository<NoticeToMariners>['count']
     >;
+    increment = jest.fn() as jest.MockedFunction<
+      Repository<NoticeToMariners>['increment']
+    >;
     list = jest.fn() as jest.MockedFunction<DatasetCatalogService['list']>;
     requireEntry = jest.fn() as jest.MockedFunction<
       DatasetCatalogService['requireEntry']
     >;
 
     service = new MapService(
-      { find, count } as unknown as Repository<NoticeToMariners>,
+      { find, count, increment } as unknown as Repository<NoticeToMariners>,
       { list, requireEntry } as unknown as DatasetCatalogService,
     );
   });
@@ -194,6 +199,20 @@ describe('MapService', () => {
       },
     ]);
     expect(count).toHaveBeenCalledTimes(14);
+  });
+
+  it('atomically increments the report counter', async () => {
+    increment.mockResolvedValue({ affected: 1, raw: [], generatedMaps: [] });
+
+    await service.report('notice-1');
+
+    expect(increment).toHaveBeenCalledWith({ id: 'notice-1' }, 'reports', 1);
+  });
+
+  it('throws NotFound when reporting an unknown notice', async () => {
+    increment.mockResolvedValue({ affected: 0, raw: [], generatedMaps: [] });
+
+    await expect(service.report('missing')).rejects.toThrow(NotFoundException);
   });
 
   it('delegates dataset reads to the catalog service', () => {

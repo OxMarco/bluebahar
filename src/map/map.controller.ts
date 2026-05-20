@@ -3,6 +3,7 @@ import {
   Get,
   Header,
   Param,
+  Post,
   Query,
   Render,
   Res,
@@ -29,9 +30,9 @@ export class MapController {
     return this.mapService.getNotices(query);
   }
 
-  @Get('notices/review')
-  async getNoticesInReview(@Query() query: GetNoticesDto) {
-    return this.mapService.getNotices(query, true);
+  @Post('notices/report/:id')
+  async reportNotice(@Param('id') id: string) {
+    return this.mapService.report(id);
   }
 
   @Get('notices/metrics')

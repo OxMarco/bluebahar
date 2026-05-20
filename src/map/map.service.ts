@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
@@ -127,5 +127,16 @@ export class MapService {
         activeTo: IsNull(),
       },
     ];
+  }
+
+  async report(id: string) {
+    // Atomic increment so concurrent reports don't clobber each other (a
+    // read-modify-write would lose increments under load). `increment` returns
+    // the affected-row count, which doubles as the existence check.
+    const result = await this.noticeRepository.increment({ id }, 'reports', 1);
+    if (!result.affected)
+      throw new NotFoundException({
+        error: `notice to mariners with id ${id} not found`,
+      });
   }
 }
