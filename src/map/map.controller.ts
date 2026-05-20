@@ -3,6 +3,7 @@ import {
   Get,
   Header,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Render,
@@ -31,7 +32,7 @@ export class MapController {
   }
 
   @Post('notices/report/:id')
-  async reportNotice(@Param('id') id: string) {
+  async reportNotice(@Param('id', ParseUUIDPipe) id: string) {
     return this.mapService.report(id);
   }
 

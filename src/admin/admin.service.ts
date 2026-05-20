@@ -85,7 +85,11 @@ export class AdminService {
   }
 
   async rejectNtM(id: string) {
-    await this.noticeRepository.delete(id);
+    const result = await this.noticeRepository.delete(id);
+    if (!result.affected)
+      throw new NotFoundException({
+        error: `notice to mariners with id ${id} not found`,
+      });
   }
 
   async addNtm(dto: CreateNoticeDto) {

@@ -4,10 +4,13 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
+import { AdminApiKeyGuard } from './admin-api-key.guard';
 import { ViewLogsDto } from './dto/view-logs.dto';
 import { ViewFlaggedDto } from './dto/view-flagged.dto';
 import { CreateNoticeDto } from './dto/create-notice.dto';
@@ -17,6 +20,7 @@ import { GetNoticesDto } from '../map/dto/get-notices.dto';
   path: '/admin',
   version: '1',
 })
+@UseGuards(AdminApiKeyGuard)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
@@ -41,17 +45,17 @@ export class AdminController {
   }
 
   @Post('notices/:id/approve')
-  approveNtM(@Param('id') id: string) {
+  approveNtM(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.approveNtM(id);
   }
 
   @Post('notices/:id/dismiss-reports')
-  dismissReports(@Param('id') id: string) {
+  dismissReports(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.dismissReports(id);
   }
 
   @Delete('notices/:id')
-  rejectNtM(@Param('id') id: string) {
+  rejectNtM(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.rejectNtM(id);
   }
 }

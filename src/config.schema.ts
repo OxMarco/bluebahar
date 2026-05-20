@@ -21,6 +21,10 @@ export const configValidationSchema = Joi.object({
   // OpenAI
   OPENAI_API_KEY: Joi.string().required(),
 
+  // Shared secret required on the X-Admin-Api-Key header for all /admin routes.
+  // Min length keeps it from being trivially brute-forced.
+  ADMIN_API_KEY: Joi.string().min(32).required(),
+
   // Public API throttling window and request limit
   THROTTLE_TTL_MS: Joi.number().integer().positive().default(60_000),
   THROTTLE_LIMIT: Joi.number().integer().positive().default(120),

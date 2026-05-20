@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
+import { AdminApiKeyGuard } from './admin-api-key.guard';
 
 describe('AdminController', () => {
   let controller: AdminController;
@@ -9,7 +10,10 @@ describe('AdminController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AdminController],
       providers: [{ provide: AdminService, useValue: {} }],
-    }).compile();
+    })
+      .overrideGuard(AdminApiKeyGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<AdminController>(AdminController);
   });

@@ -206,9 +206,20 @@ describe('AdminService', () => {
 
   describe('rejectNtM', () => {
     it('deletes the notice by id', async () => {
-      await service.rejectNtM('notice-1');
+      const id = '0f1e8f1e-9b91-4f59-bb4f-a82d06e4f950';
+      noticeDelete.mockResolvedValue({ affected: 1, raw: [] });
 
-      expect(noticeDelete).toHaveBeenCalledWith('notice-1');
+      await service.rejectNtM(id);
+
+      expect(noticeDelete).toHaveBeenCalledWith(id);
+    });
+
+    it('throws NotFound when no row is deleted', async () => {
+      noticeDelete.mockResolvedValue({ affected: 0, raw: [] });
+
+      await expect(
+        service.rejectNtM('0f1e8f1e-9b91-4f59-bb4f-a82d06e4f950'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

@@ -12,6 +12,7 @@ const validEnv = {
   REDIS_HOST: 'redis',
   REDIS_PORT: 6379,
   OPENAI_API_KEY: 'sk-test',
+  ADMIN_API_KEY: 'x'.repeat(32),
   THROTTLE_TTL_MS: 60_000,
   THROTTLE_LIMIT: 120,
   NOTICE_SCRAPE_BATCH_SIZE: 10,
@@ -39,11 +40,16 @@ describe('configValidationSchema', () => {
     const incomplete: Record<string, unknown> = { ...validEnv };
     delete incomplete.DB_PASSWORD;
     delete incomplete.OPENAI_API_KEY;
+    delete incomplete.ADMIN_API_KEY;
 
     const { error } = validate(incomplete);
 
     expect(errorPaths(error)).toEqual(
-      expect.arrayContaining(['DB_PASSWORD', 'OPENAI_API_KEY']),
+      expect.arrayContaining([
+        'DB_PASSWORD',
+        'OPENAI_API_KEY',
+        'ADMIN_API_KEY',
+      ]),
     );
   });
 

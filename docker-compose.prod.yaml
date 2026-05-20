@@ -25,6 +25,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY required}
       NOTICE_SCRAPE_BATCH_SIZE: ${NOTICE_SCRAPE_BATCH_SIZE:?NOTICE_SCRAPE_BATCH_SIZE required}
     depends_on:
       postgres:

@@ -12,7 +12,7 @@ Backend to scrape data about Maltese waters.
 
 ## Admin API notes
 
-Admin endpoints are unauthenticated for now — do not expose this service publicly without an auth layer in front.
+All `/v1/admin` routes require a shared secret on the `X-Admin-Api-Key` header matching the `ADMIN_API_KEY` env var (min 32 chars); requests without a valid key get `401 Unauthorized`. The key is compared in constant time.
 
 - `GET /v1/admin/notices/review` returns notices in the geo-sanity review queue (`{ items, limit, offset, hasMore }`).
 - `GET /v1/admin/notices/flagged?minReports=` returns notices with at least `minReports` user reports (default 1).
