@@ -75,13 +75,6 @@ describe('Map datasets API (e2e)', () => {
     expect(res.body).toEqual([source]);
   });
 
-  it('GET /v1/map renders the map page', async () => {
-    const res = await request(app.getHttpServer()).get('/v1/map').expect(200);
-
-    expect(res.text).toContain('<title>Map - BlueBaħar</title>');
-    expect(res.text).toContain("const DATASETS_URL = '/v1/map/datasets';");
-  });
-
   it('GET /v1/map/datasets/:key streams GeoJSON', async () => {
     const res = await request(app.getHttpServer())
       .get(`/v1/map/datasets/${dataset.key}`)

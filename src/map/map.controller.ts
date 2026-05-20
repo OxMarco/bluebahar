@@ -6,7 +6,6 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
-  Render,
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
@@ -19,12 +18,6 @@ import { GetNoticesDto } from './dto/get-notices.dto';
 })
 export class MapController {
   constructor(private readonly mapService: MapService) {}
-
-  @Get()
-  @Render('map')
-  root() {
-    return { version: 'v1' };
-  }
 
   @Get('notices')
   async getNotices(@Query() query: GetNoticesDto) {
