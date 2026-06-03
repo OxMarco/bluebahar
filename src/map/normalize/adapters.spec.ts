@@ -178,4 +178,75 @@ describe('feature adapters', () => {
       expect(adapt({ localId: null })?.title).toBe('Bunkering area');
     });
   });
+
+  describe('water-quality', () => {
+    const adapt = ADAPTERS['water-quality'];
+
+    const base = {
+      Site_Code: 'A01',
+      Description: 'A rocky beach along the southern coast.',
+      Name_MT: 'Il-Kalanka tal-Irgiel',
+      Name_ENG: 'Kalanka tal-Irgiel',
+      Local_Council: 'Xghajra',
+      Blue_Flag_OR_Beach_of_Quality: 'No',
+      Bathing_Water_Profile: 'https://environmentalhealth.gov.mt/bwp-1/',
+      Sandy_OR_Rocky_Beach: 'Rocky beach',
+      Pet_Friendly: 'No',
+      RecommendedForBathing_YES_OR_NO: 'Yes',
+      Pubic_convenience: 'N/A',
+    };
+
+    it('prefers the English name, falling back to Maltese then site code', () => {
+      expect(adapt(base)?.title).toBe('Kalanka tal-Irgiel');
+      expect(adapt({ ...base, Name_ENG: null })?.title).toBe(
+        'Il-Kalanka tal-Irgiel',
+      );
+      expect(
+        adapt({ Site_Code: 'B02', Name_ENG: null, Name_MT: null })?.title,
+      ).toBe('Bathing site B02');
+      expect(adapt({})).toBeNull();
+    });
+
+    it('exposes the bathing-water profile as a link and the source URL', () => {
+      const result = adapt(base);
+      expect(result?.links).toEqual([
+        {
+          url: 'https://environmentalhealth.gov.mt/bwp-1/',
+          label: 'Bathing water profile',
+        },
+      ]);
+      expect(result?.sourceUrl).toBe(
+        'https://environmentalhealth.gov.mt/bwp-1/',
+      );
+      expect(result?.sourceId).toBe('A01');
+    });
+
+    it('tags positive attributes and normalises beach-type casing', () => {
+      const result = adapt({
+        ...base,
+        Sandy_OR_Rocky_Beach: 'Sandy Beach',
+        Blue_Flag_OR_Beach_of_Quality: 'Yes',
+        Pet_Friendly: 'Yes',
+        RecommendedForBathing_YES_OR_NO: 'No',
+      });
+      expect(result?.tags).toEqual([
+        'Sandy beach',
+        'Blue Flag / Beach of Quality',
+        'Pet friendly',
+        'Not recommended for bathing',
+      ]);
+    });
+
+    it('drops the Maltese-name detail when it matches the title and the NA placeholders', () => {
+      const result = adapt({
+        ...base,
+        Name_MT: 'Kalanka tal-Irgiel',
+        Sandy_OR_Rocky_Beach: 'NA',
+      });
+      const labels = (result?.details ?? []).map((d) => d.label);
+      expect(labels).not.toContain('Maltese name');
+      expect(labels).not.toContain('Beach type');
+      expect(labels).not.toContain('Public convenience');
+    });
+  });
 });

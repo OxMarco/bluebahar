@@ -1,0 +1,17 @@
+<div class="flex items-center justify-between text-xs text-ink/70 mt-4">
+  <div>
+    Showing {{pagination.offset}}–{{add pagination.offset pagination.shown}} (page size {{pagination.limit}})
+  </div>
+  <div class="flex gap-2">
+    {{#if pagination.hasPrev}}
+      <a href="{{pagination.prevHref}}" class="px-3 py-1 border border-ink/15 rounded-md hover:bg-ink/5">Previous</a>
+    {{else}}
+      <span class="px-3 py-1 border border-ink/10 rounded-md text-ink/30 cursor-not-allowed">Previous</span>
+    {{/if}}
+    {{#if pagination.hasMore}}
+      <a href="{{pagination.nextHref}}" class="px-3 py-1 border border-ink/15 rounded-md hover:bg-ink/5">Next</a>
+    {{else}}
+      <span class="px-3 py-1 border border-ink/10 rounded-md text-ink/30 cursor-not-allowed">Next</span>
+    {{/if}}
+  </div>
+</div>

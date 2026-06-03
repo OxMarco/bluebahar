@@ -1,5 +1,4 @@
 import { Controller, Get, Render } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
 import {
   DiskHealthIndicator,
   HealthCheck,
@@ -75,13 +74,11 @@ export class AppController {
   }
 
   @Get('/v1/health/live')
-  @SkipThrottle()
   live() {
     return { status: 'ok' };
   }
 
   @Get('/v1/health/ready')
-  @SkipThrottle()
   @HealthCheck()
   ready() {
     return this.health.check([
@@ -97,7 +94,6 @@ export class AppController {
   }
 
   @Get('/v1/health/diagnostics')
-  @SkipThrottle()
   @HealthCheck()
   diagnostics() {
     return this.health.check([

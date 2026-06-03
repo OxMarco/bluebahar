@@ -20,6 +20,7 @@ export const ADAPTERS: Record<string, FeatureAdapter> = {
   'marine-caves': adaptMarineCave,
   'anchoring-and-mooring-hotspots': adaptAnchoringHotspot,
   'bunkering-areas': adaptBunkeringArea,
+  'water-quality': adaptWaterQualitySite,
 };
 
 function adaptDivingSite(raw: RawProperties): NormalizedFeatureDraft | null {
@@ -158,6 +159,75 @@ function adaptBunkeringArea(raw: RawProperties): NormalizedFeatureDraft | null {
   };
 }
 
+// Environmental Health Directorate bathing-water sites. Field names come
+// straight off the ArcGIS feature layer (Name_ENG, Blue_Flag_OR_Beach_of_Quality,
+// Bathing_Water_Profile, …) — see data/datasets/water-quality.geojson.
+function adaptWaterQualitySite(
+  raw: RawProperties,
+): NormalizedFeatureDraft | null {
+  const englishName = str(raw.Name_ENG);
+  const malteseName = str(raw.Name_MT);
+  const siteCode = str(raw.Site_Code);
+  const title =
+    englishName ??
+    malteseName ??
+    (siteCode ? `Bathing site ${siteCode}` : undefined);
+  if (!title) return null;
+
+  const beachType = beachTypeLabel(str(raw.Sandy_OR_Rocky_Beach));
+  const blueFlag = yesNo(raw.Blue_Flag_OR_Beach_of_Quality);
+  const petFriendly = yesNo(raw.Pet_Friendly);
+  const recommended = yesNo(raw.RecommendedForBathing_YES_OR_NO);
+
+  const tags = compactTags([
+    beachType,
+    blueFlag === true ? 'Blue Flag / Beach of Quality' : undefined,
+    petFriendly === true ? 'Pet friendly' : undefined,
+    recommended === false ? 'Not recommended for bathing' : undefined,
+  ]);
+
+  // Show the Maltese name only when it actually differs from the title we're
+  // already displaying, so most sheets don't repeat the heading.
+  const malteseDetail =
+    malteseName && malteseName.toLowerCase() !== title.toLowerCase()
+      ? malteseName
+      : undefined;
+
+  const details = compactDetails([
+    labelDetail('Locality', str(raw.Local_Council)),
+    labelDetail('Maltese name', malteseDetail),
+    labelDetail(
+      'Recommended for bathing',
+      yesNoLabel(raw.RecommendedForBathing_YES_OR_NO),
+    ),
+    labelDetail(
+      'Blue Flag / Beach of Quality',
+      yesNoLabel(raw.Blue_Flag_OR_Beach_of_Quality),
+    ),
+    labelDetail('Beach type', beachType),
+    labelDetail('Pet friendly', yesNoLabel(raw.Pet_Friendly)),
+    labelDetail(
+      'Public convenience',
+      publicConvenienceLabel(str(raw.Pubic_convenience)),
+    ),
+  ]);
+
+  const profile = sourceUrl(raw.Bathing_Water_Profile);
+
+  return {
+    title,
+    subtitle: 'Bathing water site',
+    description: str(raw.Description),
+    tags,
+    details,
+    links: profile
+      ? [{ url: profile, label: 'Bathing water profile' }]
+      : undefined,
+    sourceId: siteCode ?? str(raw.GlobalID),
+    sourceUrl: profile,
+  };
+}
+
 // ── helpers ────────────────────────────────────────────────────────────────
 
 function str(v: unknown): string | undefined {
@@ -179,6 +249,38 @@ function sourceUrl(v: unknown): string | undefined {
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Upstream encodes booleans as "Yes"/"No" strings. Returns undefined for
+// anything else (blank, "N/A") so callers can drop the field entirely.
+function yesNo(v: unknown): boolean | undefined {
+  const value = str(v)?.toLowerCase();
+  if (value === 'yes') return true;
+  if (value === 'no') return false;
+  return undefined;
+}
+
+function yesNoLabel(v: unknown): string | undefined {
+  const flag = yesNo(v);
+  return flag === undefined ? undefined : flag ? 'Yes' : 'No';
+}
+
+// Beach-type values arrive with inconsistent casing ("Rocky Beach" vs
+// "Rocky beach") and a literal "NA" for unknown. Normalise casing so the tag
+// set dedupes, and drop the placeholder.
+function beachTypeLabel(v: unknown): string | undefined {
+  const value = str(v);
+  if (!value || /^n\/?a$/i.test(value)) return undefined;
+  const lower = value.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+// "Pubic_convenience" (sic) is either "N/A" or a free-text "Situated <coords>".
+// The coordinates aren't useful in a detail row — collapse to a plain flag.
+function publicConvenienceLabel(v: unknown): string | undefined {
+  const value = str(v);
+  if (!value || /^n\/?a$/i.test(value)) return undefined;
+  return 'Available nearby';
 }
 
 function startCase(s: string): string {

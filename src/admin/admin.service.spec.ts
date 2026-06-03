@@ -131,7 +131,7 @@ describe('AdminService', () => {
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).toEqual(
-        expect.objectContaining({ title: 'Temporary works' }),
+        expect.objectContaining({ title: 'Temporary works', reports: 5 }),
       );
       expect(result.hasMore).toBe(false);
       const options = noticeFind.mock.calls[0]?.[0];

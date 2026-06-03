@@ -35,6 +35,17 @@ describe('DatasetCatalogService', () => {
     expect(first.sha256).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it('surfaces publisher attribution for datasets that declare it', () => {
+    const waterQuality = service
+      .list()
+      .find((dataset) => dataset.key === 'water-quality');
+
+    expect(waterQuality?.attribution).toEqual({
+      name: 'Environmental Health Directorate, Ministry for Health (Malta)',
+      url: 'https://environmentalhealth.gov.mt/en/ehs/wrau/bathing-water-profiles/',
+    });
+  });
+
   it('returns a payload string for a known dataset key', () => {
     const entry = service.requireEntry(DATASETS[0].key);
 

@@ -1,10 +1,11 @@
-import type { DatasetKind } from '../datasets';
+import type { DatasetAttribution, DatasetKind } from '../datasets';
 
 export class DatasetDto {
   key!: string;
   name!: string;
   kind!: DatasetKind;
   sourceUrl!: string;
+  attribution?: DatasetAttribution;
   featureCount!: number;
   geometryTypes!: string[];
   bbox?: [number, number, number, number];

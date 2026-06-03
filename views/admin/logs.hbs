@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {{> admin-head}}
+</head>
+<body class="bg-paper text-ink">
+  <div class="min-h-screen flex">
+    {{> admin-sidebar}}
+    <main class="flex-1 p-6 md:p-10">
+      <header class="mb-6 flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <h1 class="text-2xl font-display font-semibold">{{title}}</h1>
+          <p class="text-sm text-ink/60 mt-1">Scraping and ingestion activity, newest first.</p>
+        </div>
+        <form method="get" class="flex items-center gap-2 text-sm">
+          <label for="logType" class="text-ink/60">Type</label>
+          <select name="logType" id="logType" class="border border-ink/15 rounded-md px-2 py-1 bg-white">
+            <option value="">All</option>
+            {{#each logTypes}}
+              <option value="{{this}}" {{#if (eq this ../selectedLogType)}}selected{{/if}}>{{this}}</option>
+            {{/each}}
+          </select>
+          <button type="submit" class="px-3 py-1 bg-ink text-white rounded-md hover:opacity-90">Filter</button>
+        </form>
+      </header>
+
+      {{#if logs.length}}
+        <div class="overflow-x-auto border border-ink/10 rounded-xl bg-white">
+          <table class="min-w-full text-sm">
+            <thead class="text-left text-xs uppercase tracking-wider text-ink/55 border-b border-ink/10">
+              <tr>
+                <th class="px-4 py-3 w-44">When</th>
+                <th class="px-4 py-3 w-48">Type</th>
+                <th class="px-4 py-3">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-ink/5">
+              {{#each logs}}
+                <tr>
+                  <td class="px-4 py-3 align-top text-xs text-ink/70 whitespace-nowrap">{{formatDate this.createdAt}}</td>
+                  <td class="px-4 py-3 align-top"><span class="text-[11px] uppercase tracking-wider bg-ink/5 rounded px-2 py-0.5">{{this.logType}}</span></td>
+                  <td class="px-4 py-3 align-top text-sm">{{this.description}}</td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        </div>
+        {{> admin-pagination}}
+      {{else}}
+        <div class="border border-ink/10 rounded-xl bg-white p-10 text-center text-ink/60">
+          No log entries.
+        </div>
+      {{/if}}
+    </main>
+  </div>
+</body>
+</html>

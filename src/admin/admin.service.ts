@@ -6,12 +6,12 @@ import { Logs } from '../scraper/entities/logs.entity';
 import { LogType } from '../scraper/log-type';
 import { MapService } from '../map/map.service';
 import { GetNoticesDto } from '../map/dto/get-notices.dto';
-import { PaginatedNoticesDto } from '../map/dto/paginated-notices.dto';
 import { toNoticeDto } from '../map/notice-serializer';
 import { CreateNoticeDto } from './dto/create-notice.dto';
 import { ViewLogsDto } from './dto/view-logs.dto';
 import { ViewFlaggedDto } from './dto/view-flagged.dto';
 import { PaginatedLogsDto } from './dto/paginated-logs.dto';
+import { PaginatedFlaggedNoticesDto } from './dto/flagged-notice.dto';
 
 @Injectable()
 export class AdminService {
@@ -45,7 +45,7 @@ export class AdminService {
 
   async viewFlaggedNotices(
     query: ViewFlaggedDto,
-  ): Promise<PaginatedNoticesDto> {
+  ): Promise<PaginatedFlaggedNoticesDto> {
     const { minReports, limit, offset } = query;
     const entities = await this.noticeRepository.find({
       where: { reports: MoreThanOrEqual(minReports) },
@@ -55,7 +55,9 @@ export class AdminService {
     });
     const hasMore = entities.length > limit;
     return {
-      items: entities.slice(0, limit).map(toNoticeDto),
+      items: entities
+        .slice(0, limit)
+        .map((entity) => ({ ...toNoticeDto(entity), reports: entity.reports })),
       limit,
       offset,
       hasMore,

@@ -13,6 +13,7 @@ import { resolve } from 'node:path';
 import {
   DATASETS,
   DEFAULT_DATASET_BOUNDS,
+  type DatasetAttribution,
   type DatasetBounds,
   type DatasetDefinition,
   type DatasetKind,
@@ -41,6 +42,7 @@ export interface DatasetMetadata {
   name: string;
   kind: DatasetKind;
   sourceUrl: string;
+  attribution?: DatasetAttribution;
   featureCount: number;
   geometryTypes: string[];
   bbox?: GeoJsonBbox;
@@ -178,20 +180,40 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
     throw new NotFoundException(`Unknown dataset: ${key}`);
   }
 
+  // Swaps the in-memory entry for `def.key` with one built from freshly fetched
+  // GeoJSON. Used by DatasetRefreshService for the `refresh: 'daily'` layers.
+  // Builds first and only commits on success, so a malformed upstream payload
+  // leaves the previously-served entry (the boot-time seed) untouched. Returns
+  // the new metadata so the caller can log what changed.
+  refreshEntry(def: DatasetDefinition, raw: string): DatasetMetadata {
+    const entry = this.buildEntry(def, raw);
+    this.entries.set(def.key, entry);
+    this.loadFailures.delete(def.key);
+    return entry.metadata;
+  }
+
   private async loadEntry(
     def: DatasetDefinition,
     filePath: string,
   ): Promise<DatasetEntry> {
     const raw = await readFile(filePath, 'utf8');
-    const parsed = JSON.parse(raw) as GeoJsonFeatureCollection;
-    const rawSummary = validateFeatureCollection(def, parsed);
+    return this.buildEntry(def, raw);
+  }
 
+  private buildEntry(def: DatasetDefinition, raw: string): DatasetEntry {
+    const parsed = JSON.parse(raw) as GeoJsonFeatureCollection;
+
+    // Interactive datasets rebuild their payload from normalized features, so
+    // normalize() owns validation and can drop unrenderable features (null
+    // geometry, missing title). Context datasets are served verbatim, so every
+    // feature must pass up front. Validating all geometry here would reject a
+    // whole interactive layer for a single null-geometry feature.
     const { payload, summary } =
       def.kind === 'interactive'
         ? this.normalize(def, parsed)
         : {
             payload: raw,
-            summary: rawSummary,
+            summary: validateFeatureCollection(def, parsed),
           };
 
     return {
@@ -201,6 +223,7 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
         name: def.name,
         kind: def.kind,
         sourceUrl: def.sourceUrl,
+        ...(def.attribution ? { attribution: def.attribution } : {}),
         featureCount: summary.featureCount,
         geometryTypes: summary.geometryTypes,
         bbox: summary.bbox,
@@ -222,15 +245,33 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
         `Interactive dataset "${def.key}" has no adapter registered`,
       );
     }
+    if (!isRecord(parsed) || parsed.type !== 'FeatureCollection') {
+      throw new Error(
+        `Expected GeoJSON FeatureCollection, got type=${String(parsed?.type ?? 'undefined')}`,
+      );
+    }
+    if (!Array.isArray(parsed.features)) {
+      throw new Error(
+        'Expected GeoJSON FeatureCollection.features to be an array',
+      );
+    }
 
     const out: GeoJsonFeature[] = [];
-    let dropped = 0;
+    let droppedNoTitle = 0;
+    let droppedNoGeometry = 0;
     const seenIds = new Set<string>();
     for (const [index, feature] of parsed.features.entries()) {
+      // Upstream feature services return rows without a mapped location as
+      // null-geometry features; they can't be plotted, so skip them rather
+      // than fail the layer.
+      if (!isRecord(feature.geometry)) {
+        droppedNoGeometry += 1;
+        continue;
+      }
       const rawProps = (feature.properties ?? {}) as Record<string, unknown>;
       const normalized = adapter(rawProps);
       if (normalized === null) {
-        dropped += 1;
+        droppedNoTitle += 1;
         continue;
       }
       const id = featureId(def.key, normalized, rawProps, index, seenIds);
@@ -243,9 +284,10 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
         properties: { ...normalized, id },
       });
     }
+    const dropped = droppedNoTitle + droppedNoGeometry;
     if (dropped > 0) {
       this.logger.warn(
-        `Dropped ${dropped}/${parsed.features.length} feature(s) from "${def.key}" (adapter returned null — missing title)`,
+        `Dropped ${dropped}/${parsed.features.length} feature(s) from "${def.key}" (${droppedNoTitle} missing title, ${droppedNoGeometry} null geometry)`,
       );
     }
     if (out.length === 0) {

@@ -1,0 +1,18 @@
+<aside class="hidden md:flex md:flex-col md:w-56 md:shrink-0 bg-ink text-paper">
+  <div class="px-6 py-5 flex items-center gap-3 border-b border-white/10">
+    <img src="/logo.png" alt="" class="h-9 w-9 rounded-lg" />
+    <div>
+      <div class="font-display font-semibold leading-none">BlueBaħar</div>
+      <div class="text-[11px] uppercase tracking-widest text-white/55 mt-1">Admin</div>
+    </div>
+  </div>
+  <nav class="flex-1 p-3 space-y-1 text-sm">
+    <a href="/admin/review" class="nav-link block rounded-md px-3 py-2" {{#if (eq page "review")}}data-active{{/if}}>Review queue</a>
+    <a href="/admin/flagged" class="nav-link block rounded-md px-3 py-2" {{#if (eq page "flagged")}}data-active{{/if}}>User-flagged</a>
+    <a href="/admin/logs" class="nav-link block rounded-md px-3 py-2" {{#if (eq page "logs")}}data-active{{/if}}>Logs</a>
+    <a href="/admin/new" class="nav-link block rounded-md px-3 py-2" {{#if (eq page "new")}}data-active{{/if}}>Add notice</a>
+  </nav>
+  <form method="post" action="/admin/logout" class="p-3 border-t border-white/10">
+    <button type="submit" class="w-full text-left text-sm text-white/70 hover:text-white px-3 py-2 rounded-md hover:bg-white/10">Sign out</button>
+  </form>
+</aside>

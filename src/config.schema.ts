@@ -21,9 +21,22 @@ export const configValidationSchema = Joi.object({
   // OpenAI
   OPENAI_API_KEY: Joi.string().required(),
 
-  // Shared secret required on the X-Admin-Api-Key header for all /admin routes.
-  // Min length keeps it from being trivially brute-forced.
-  ADMIN_API_KEY: Joi.string().min(32).required(),
+  // Pre-shared admin secret. The user types this into the /admin/login form;
+  // the controller constant-time compares it to mint a session JWT. Min length
+  // keeps it from being trivially brute-forced.
+  ADMIN_API_KEY: Joi.string().min(6).max(32).required(),
+
+  // Signs the admin-panel session cookie. Distinct from ADMIN_API_KEY so the
+  // pre-shared key can be rotated without invalidating live browser sessions
+  // (and vice versa).
+  ADMIN_JWT_SECRET: Joi.string().min(6).max(32).required(),
+
+  // Admin session lifetime in seconds. Short by design — the panel re-prompts
+  // for the pre-shared key rather than issuing refresh tokens.
+  ADMIN_SESSION_TTL_SECONDS: Joi.number()
+    .integer()
+    .positive()
+    .default(60 * 60),
 
   // Public API throttling window and request limit
   THROTTLE_TTL_MS: Joi.number().integer().positive().default(60_000),

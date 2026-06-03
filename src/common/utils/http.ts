@@ -12,7 +12,7 @@ export const impit = new Impit({
   cookieJar,
 });
 
-export async function fetchHtml(
+export async function fetchText(
   url: string,
   init?: Parameters<typeof impit.fetch>[1],
 ): Promise<string> {
@@ -22,6 +22,10 @@ export async function fetchHtml(
   }
   return res.text();
 }
+
+// Historical alias — most callers fetch HTML, but the underlying read is just
+// text. Kept so existing scrapers don't churn.
+export const fetchHtml = fetchText;
 
 export async function fetchBuffer(
   url: string,

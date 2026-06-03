@@ -10,15 +10,14 @@ Backend to scrape data about Maltese waters.
 - `GET /v1/map/datasets` includes each layer's `kind`, `geometryTypes`, and `bbox`.
 - `GET /v1/map/datasets/:key` supports `If-None-Match` / `304 Not Modified` via the dataset SHA-256 ETag.
 
-## Admin API notes
+## Admin panel
 
-All `/v1/admin` routes require a shared secret on the `X-Admin-Api-Key` header matching the `ADMIN_API_KEY` env var (min 32 chars); requests without a valid key get `401 Unauthorized`. The key is compared in constant time.
+Browser-only. Visit `/admin/login` and enter the `ADMIN_API_KEY` value; on success the server mints a JWT signed with `ADMIN_JWT_SECRET` and stores it in an httpOnly, `SameSite=Strict` cookie scoped to `/admin`. Cookie lifetime is `ADMIN_SESSION_TTL_SECONDS` (default 3600).
 
-- `GET /v1/admin/notices/review` returns notices in the geo-sanity review queue (`{ items, limit, offset, hasMore }`).
-- `GET /v1/admin/notices/flagged?minReports=` returns notices with at least `minReports` user reports (default 1).
-- `GET /v1/admin/logs?logType=&since=` returns audit logs, newest first, optionally filtered by type and ISO `since` date. Logs older than 14 days are pruned daily by a midnight cron.
-- `POST /v1/admin/notices` manually creates a notice (skips the review queue).
-- `POST /v1/admin/notices/:id/approve` clears the review flag; `POST /v1/admin/notices/:id/dismiss-reports` resets the report counter; `DELETE /v1/admin/notices/:id` removes a notice.
+- `/admin/review` — notices flagged by the LLM extractor (`needsReview=true`); approve to publish, delete to reject.
+- `/admin/flagged?minReports=` — notices with at least `minReports` user reports (default 1); dismiss to reset the counter, delete to remove.
+- `/admin/logs?logType=` — scraping/ingestion log entries, newest first. Logs older than 14 days are pruned daily by a midnight cron.
+- `/admin/new` — manually create a notice (skips the review queue). Geometries (`areas`) aren't editable from the form yet.
 
 ## Dataset maintenance
 
