@@ -27,7 +27,9 @@ describe('Map datasets API (e2e)', () => {
     geometryTypes: ['Point'],
     bbox: [14.5, 35.9, 14.5, 35.9],
     byteSize: fileStats.size,
+    sha256: 'a'.repeat(64),
   };
+  const datasetsRevision = 'b'.repeat(64);
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -37,6 +39,7 @@ describe('Map datasets API (e2e)', () => {
           provide: MapService,
           useValue: {
             listDatasets: jest.fn(() => [source]),
+            datasetsRevision: jest.fn(() => datasetsRevision),
             getNoticeMetrics: jest.fn(() => ({
               asOf: '2026-01-01T00:00:00.000Z',
               total: 0,
@@ -73,6 +76,15 @@ describe('Map datasets API (e2e)', () => {
       .expect(200);
 
     expect(res.body).toEqual([source]);
+    expect(res.headers['etag']).toBe(`"${datasetsRevision}"`);
+    expect(res.headers['cache-control']).toBe('no-cache');
+  });
+
+  it('GET /v1/map/datasets 304s on a matching If-None-Match', async () => {
+    await request(app.getHttpServer())
+      .get('/v1/map/datasets')
+      .set('If-None-Match', `"${datasetsRevision}"`)
+      .expect(304);
   });
 
   it('GET /v1/map/datasets/:key streams GeoJSON', async () => {
@@ -81,11 +93,20 @@ describe('Map datasets API (e2e)', () => {
       .expect(200);
 
     expect(res.headers['content-type']).toContain('application/geo+json');
+    expect(res.headers['etag']).toBe(`"${source.sha256}"`);
+    expect(res.headers['cache-control']).toBe('no-cache');
     expect(res.headers['x-dataset-key']).toBe(dataset.key);
     expect(res.headers['x-dataset-kind']).toBe(dataset.kind);
     expect(res.headers['x-dataset-feature-count']).toBe('1');
     expect(res.headers['x-dataset-geometry-types']).toBe('Point');
     expect(res.headers['x-dataset-bbox']).toBe('14.5,35.9,14.5,35.9');
     expect(JSON.parse(res.text)).toHaveProperty('type', 'FeatureCollection');
+  });
+
+  it('GET /v1/map/datasets/:key 304s on a matching If-None-Match', async () => {
+    await request(app.getHttpServer())
+      .get(`/v1/map/datasets/${dataset.key}`)
+      .set('If-None-Match', `"${source.sha256}"`)
+      .expect(304);
   });
 });

@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { IsNull, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { createHash } from 'node:crypto';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
@@ -21,6 +23,8 @@ export class MapService {
     @InjectRepository(NoticeToMariners)
     private readonly noticeRepository: Repository<NoticeToMariners>,
     private readonly datasets: DatasetCatalogService,
+    @Inject(CACHE_MANAGER)
+    private readonly cache: Cache,
   ) {}
 
   async getNotices(
@@ -66,7 +70,17 @@ export class MapService {
     };
   }
 
+  // Cached: the metrics are a fan-out of ~a dozen COUNT queries and the result
+  // changes only when the notice set does, so a short TTL spares the DB the
+  // repeated scans under polling load. `asOf` reflects when the snapshot was
+  // computed, not the request time.
   async getNoticeMetrics(): Promise<NoticeMetricsDto> {
+    return this.cache.wrap('map:notice-metrics', () =>
+      this.computeNoticeMetrics(),
+    );
+  }
+
+  private async computeNoticeMetrics(): Promise<NoticeMetricsDto> {
     const now = new Date();
     const [
       total,
@@ -115,6 +129,10 @@ export class MapService {
   // delete (count down). Expiry is left out by design — it's deterministic, so
   // the app drops lapsed notices itself using `nextExpiryAt` rather than polling.
   async getManifest(): Promise<CacheManifestDto> {
+    return this.cache.wrap('map:manifest', () => this.computeManifest());
+  }
+
+  private async computeManifest(): Promise<CacheManifestDto> {
     const now = new Date();
     const [summary, expiry] = await Promise.all([
       this.noticeRepository
@@ -147,6 +165,11 @@ export class MapService {
 
   listDatasets(): DatasetMetadata[] {
     return this.datasets.list();
+  }
+
+  // Opaque content-hash of the served catalog; used as the dataset list's ETag.
+  datasetsRevision(): string {
+    return this.datasets.revision();
   }
 
   requireDataset(key: string): DatasetEntry {

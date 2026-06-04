@@ -18,6 +18,11 @@ export const configValidationSchema = Joi.object({
   REDIS_HOST: Joi.string().hostname().required(),
   REDIS_PORT: Joi.number().port().required(),
 
+  // TTL (ms) for cached map reads (notice metrics, change-detection manifest).
+  // Short by design: clients polling for changes tolerate this much staleness,
+  // and it spares the DB the repeated COUNT/aggregate fan-out under load.
+  MAP_CACHE_TTL_MS: Joi.number().integer().positive().default(30_000),
+
   // OpenAI
   OPENAI_API_KEY: Joi.string().required(),
 

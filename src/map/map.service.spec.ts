@@ -1,4 +1,5 @@
 import type { Repository } from 'typeorm';
+import type { Cache } from 'cache-manager';
 import {
   DatasetCatalogService,
   type DatasetEntry,
@@ -15,7 +16,7 @@ function makeNotice(
   const notice = new NoticeToMariners();
   Object.assign(notice, {
     id: '0f1e8f1e-9b91-4f59-bb4f-a82d06e4f950',
-    kind: NoticeKind.AREA,
+    kind: NoticeKind.ALERT,
     title: 'Temporary works',
     description: 'Works in progress.',
     source: 'https://example.com/notice.pdf',
@@ -59,9 +60,16 @@ describe('MapService', () => {
       DatasetCatalogService['requireEntry']
     >;
 
+    // Pass-through cache: always misses, so wrapped reads run their factory.
+    // Caching behavior itself is exercised end-to-end, not here.
+    const cache = {
+      wrap: jest.fn((_key: string, fn: () => unknown) => fn()),
+    } as unknown as Cache;
+
     service = new MapService(
       { find, count, increment } as unknown as Repository<NoticeToMariners>,
       { list, requireEntry } as unknown as DatasetCatalogService,
+      cache,
     );
   });
 
@@ -70,7 +78,7 @@ describe('MapService', () => {
 
     const query: GetNoticesDto = {
       activeOnly: true,
-      kind: NoticeKind.AREA,
+      kind: NoticeKind.ALERT,
       limit: 25,
       offset: 50,
     };
@@ -87,7 +95,7 @@ describe('MapService', () => {
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toEqual(
       expect.objectContaining({
-        kind: NoticeKind.AREA,
+        kind: NoticeKind.ALERT,
         title: 'Temporary works',
         geometry: { type: 'Point', coordinates: [14.5, 35.9] },
       }),
@@ -109,7 +117,7 @@ describe('MapService', () => {
     expect(where[0]).toEqual(
       expect.objectContaining({
         needsReview: false,
-        kind: NoticeKind.AREA,
+        kind: NoticeKind.ALERT,
       }),
     );
     expect(where[0]).toHaveProperty('activeFrom');
@@ -117,7 +125,7 @@ describe('MapService', () => {
     expect(where[1]).toEqual(
       expect.objectContaining({
         needsReview: false,
-        kind: NoticeKind.AREA,
+        kind: NoticeKind.ALERT,
       }),
     );
   });
@@ -181,9 +189,9 @@ describe('MapService', () => {
       }),
     );
     expect(result.byKind).toEqual([
-      { kind: NoticeKind.AREA, total: 6, publicCount: 5, needsReviewCount: 1 },
+      { kind: NoticeKind.ALERT, total: 6, publicCount: 5, needsReviewCount: 1 },
       {
-        kind: NoticeKind.ADVISORY,
+        kind: NoticeKind.INFO,
         total: 2,
         publicCount: 1,
         needsReviewCount: 1,

@@ -35,7 +35,6 @@ export interface ParsedNotice {
   activeFrom: Date;
   activeTo?: Date;
   distance?: number;
-  depth?: number;
   areas: NoticeGeometryPart[];
   // True when geometry was missing/broken, a coordinate fell outside Malta, a
   // source typo was excluded, the PDF looked scanned, or a restriction notice
@@ -177,6 +176,29 @@ function buildDescription(
   return ruleBasedDescription(x);
 }
 
+// Alert vs info is SEMANTIC, not geometric. An alert is a hazard/restriction a
+// mariner must act on; info is administrative. EITHER can be text-only or carry
+// plottable areas — so we never infer the kind from `areas.length`. The AI
+// enrichment already triages exactly this (enrich.ts NoticeCategory); when it is
+// off, failed, or undecided ('other'), fall back to the rule-based document
+// type, which itself defaults to info for anything not a restriction/extension.
+const ALERT_DOC_TYPES: ReadonlySet<DocumentType> = new Set<DocumentType>([
+  'new_restriction',
+  'time_extension',
+]);
+
+function classifyKind(
+  extraction: NoticeExtraction,
+  enrichment: Enrichment | null,
+): NoticeKind {
+  if (enrichment && enrichment.category !== 'other') {
+    return enrichment.category === 'alert' ? NoticeKind.ALERT : NoticeKind.INFO;
+  }
+  return ALERT_DOC_TYPES.has(extraction.document_type)
+    ? NoticeKind.ALERT
+    : NoticeKind.INFO;
+}
+
 function noticeCoordCount(notes: string[]): number {
   for (const n of notes) {
     const m = n.match(/^coords:(\d+)/);
@@ -251,7 +273,7 @@ export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
   ]);
 
   return {
-    kind: areas.length > 0 ? NoticeKind.AREA : NoticeKind.ADVISORY,
+    kind: classifyKind(extraction, enrichment),
     title,
     description: buildDescription(extraction, enrichment),
     source,

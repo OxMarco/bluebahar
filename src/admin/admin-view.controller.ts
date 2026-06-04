@@ -25,7 +25,11 @@ import type { Response } from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import * as Sentry from '@sentry/nestjs';
 import { AdminService } from './admin.service';
-import { AdminJwtGuard, ADMIN_SESSION_COOKIE } from './admin-jwt.guard';
+import {
+  AdminJwtGuard,
+  AdminLoginRedirectFilter,
+  ADMIN_SESSION_COOKIE,
+} from './admin-jwt.guard';
 import { LoginDto } from './dto/login.dto';
 import { CreateNoticeDto } from './dto/create-notice.dto';
 import { ViewLogsDto } from './dto/view-logs.dto';
@@ -103,6 +107,7 @@ function createNoticeErrorMessage(exception: unknown): string {
 // minted by /admin/login after a constant-time check against ADMIN_API_KEY.
 // All other routes are gated by AdminJwtGuard.
 @Controller({ path: 'admin', version: VERSION_NEUTRAL })
+@UseFilters(AdminLoginRedirectFilter)
 export class AdminViewController {
   private readonly adminKey: Buffer;
   private readonly sessionTtlSeconds: number;
@@ -225,7 +230,9 @@ export class AdminViewController {
 
   @Post('notices')
   @UseGuards(AdminJwtGuard)
-  @UseFilters(AdminCreateNoticeExceptionFilter)
+  // Redirect filter first so a guard rejection (AdminLoginRedirect) bounces to
+  // login instead of the catch-all rendering admin/new with no session.
+  @UseFilters(AdminLoginRedirectFilter, AdminCreateNoticeExceptionFilter)
   async createNotice(@Body() dto: CreateNoticeDto, @Res() res: Response) {
     const saved = await this.adminService.addNtm(dto);
     return res.render('admin/new', {

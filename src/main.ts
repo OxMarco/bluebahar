@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
+import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import hbs from 'hbs';
 import { join } from 'node:path';
@@ -41,6 +42,9 @@ async function bootstrap() {
     }),
   );
   app.useGlobalInterceptors(new ClassSerializerInterceptor(reflector));
+  // Gzip/deflate responses. The big win is the GeoJSON datasets and notice
+  // collections served under /v1/map — large, highly compressible JSON.
+  app.use(compression());
   app.use(
     helmet({
       contentSecurityPolicy: {

@@ -111,7 +111,6 @@ describe('adaptToParsedNotice', () => {
     expect(result.areas[1].points).toHaveLength(2);
     expect(result.areas[2].geometryType).toBe('polygon');
     expect(result.areas[2].points[0]).toEqual({ lat: 35.9, long: 14.5 });
-    expect(result.kind).toBe(NoticeKind.AREA);
   });
 
   it('splits MultiPolygon and GeometryCollection into multiple labelled parts', () => {
@@ -148,18 +147,83 @@ describe('adaptToParsedNotice', () => {
     expect(result.areas.every((a) => a.geometryType === 'polygon')).toBe(true);
   });
 
-  it('classifies a notice with no plottable geometry as advisory', () => {
-    const result = adaptToParsedNotice(
-      input({
-        extraction: extraction({ document_type: 'cancellation', areas: [] }),
-        featureCollection: fc([{ geometry: null, properties: {} }]),
-        notes: ['coords:0'],
-      }),
-    );
-    expect(result.kind).toBe(NoticeKind.ADVISORY);
-    expect(result.areas).toHaveLength(0);
-    expect(result.needsReview).toBe(false);
-    expect(result.reviewReasons).toEqual([]);
+  describe('kind classification (semantic, geometry-independent)', () => {
+    const enrich = (over: Partial<Enrichment> = {}): Enrichment => ({
+      category: 'alert',
+      summary: '',
+      recommended_action: '',
+      affected_locations: [],
+      validity: '',
+      model: 'gpt-5.5',
+      latency_ms: 1,
+      ...over,
+    });
+
+    const point = fc([
+      {
+        geometry: { type: 'Point', coordinates: [14.5, 35.9] },
+        properties: {},
+      },
+    ]);
+    const noGeometry = fc([{ geometry: null, properties: {} }]);
+
+    it('uses the AI category, not geometry: alert with NO area stays alert', () => {
+      const result = adaptToParsedNotice(
+        input({
+          enrichment: enrich({ category: 'alert' }),
+          featureCollection: noGeometry,
+        }),
+      );
+      expect(result.kind).toBe(NoticeKind.ALERT);
+      expect(result.areas).toHaveLength(0);
+    });
+
+    it('uses the AI category, not geometry: info WITH an area stays info', () => {
+      const result = adaptToParsedNotice(
+        input({
+          enrichment: enrich({ category: 'info' }),
+          featureCollection: point,
+        }),
+      );
+      expect(result.kind).toBe(NoticeKind.INFO);
+      expect(result.areas).toHaveLength(1);
+    });
+
+    it("defers the AI 'other' category to the document type (here: cancellation -> info)", () => {
+      const result = adaptToParsedNotice(
+        input({
+          enrichment: enrich({ category: 'other' }),
+          extraction: extraction({ document_type: 'cancellation' }),
+          featureCollection: point,
+        }),
+      );
+      expect(result.kind).toBe(NoticeKind.INFO);
+    });
+
+    it('falls back to document type when enrichment is absent: restriction -> alert', () => {
+      const result = adaptToParsedNotice(
+        input({
+          enrichment: null,
+          extraction: extraction({ document_type: 'new_restriction' }),
+          featureCollection: noGeometry,
+        }),
+      );
+      expect(result.kind).toBe(NoticeKind.ALERT);
+    });
+
+    it('falls back to document type when enrichment is absent: cancellation -> info', () => {
+      const result = adaptToParsedNotice(
+        input({
+          enrichment: null,
+          extraction: extraction({ document_type: 'cancellation', areas: [] }),
+          featureCollection: noGeometry,
+        }),
+      );
+      expect(result.kind).toBe(NoticeKind.INFO);
+      expect(result.areas).toHaveLength(0);
+      expect(result.needsReview).toBe(false);
+      expect(result.reviewReasons).toEqual([]);
+    });
   });
 
   describe('needsReview', () => {

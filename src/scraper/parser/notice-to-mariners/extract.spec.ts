@@ -89,7 +89,7 @@ function polygonArea(
 describe('regex -> geometry -> adapter (real notice text)', () => {
   it('extracts coastline-closed restriction polygons from an area notice', () => {
     const notice = pipeline('Not_29_of_2025');
-    expect(notice.kind).toBe('area');
+    expect(notice.kind).toBe('alert');
     expect(notice.title.length).toBeGreaterThan(0);
 
     const polygons = notice.areas.filter((a) => a.geometryType === 'polygon');
@@ -110,7 +110,7 @@ describe('regex -> geometry -> adapter (real notice text)', () => {
 
   it('realises a firing-practice sector as a polygon', () => {
     const notice = pipeline('Not_35_of_2026');
-    expect(notice.kind).toBe('area');
+    expect(notice.kind).toBe('alert');
     expect(
       notice.areas.some(
         (a) => a.geometryType === 'polygon' && a.points.length > 3,
@@ -121,10 +121,16 @@ describe('regex -> geometry -> adapter (real notice text)', () => {
     expect(notice.needsReview).toBe(false);
   });
 
-  it('classifies a coordinate-less cumulative notice as advisory', () => {
+  it('keeps kind independent of geometry: a coordinate-less restriction is still an alert', () => {
+    // A waste-disposal reminder with no coordinates. It quotes "prohibited", so
+    // the deterministic classifier (used when AI enrichment is off) calls it a
+    // restriction and conservatively returns 'alert' — proving kind comes from
+    // the notice's meaning, not from whether it has plottable areas. In
+    // production the AI enrichment would refine an administrative reminder to
+    // 'info'.
     const notice = pipeline('Not_097_of_2025');
     expect(notice.areas).toHaveLength(0);
-    expect(notice.kind).toBe('advisory');
+    expect(notice.kind).toBe('alert');
     expect(notice.needsReview).toBe(false);
     expect(notice.description.length).toBeGreaterThan(0);
   });
@@ -142,7 +148,7 @@ B 35° 59'.460 014° 27'.150
 C 35° 58'.290 014° 32'.190
 `);
 
-    expect(notice.kind).toBe('area');
+    expect(notice.kind).toBe('alert');
     expect(notice.needsReview).toBe(true);
     expect(notice.reviewReasons).toContain(
       'generic_extraction_verify_geometry',
@@ -304,6 +310,8 @@ describe('extractNoticeFromBuffer orchestration', () => {
     );
 
     expect(create).not.toHaveBeenCalled();
-    expect(out[0].kind).toBe('advisory');
+    // No AI: kind falls back to the deterministic document type. This fixture
+    // quotes "prohibited", so it lands on 'alert' (the safe default).
+    expect(out[0].kind).toBe('alert');
   });
 });

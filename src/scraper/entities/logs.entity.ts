@@ -22,6 +22,6 @@ export class Logs {
   description!: string;
 
   @Index()
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 }

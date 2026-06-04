@@ -11,7 +11,7 @@ function makeNotice(
   const notice = new NoticeToMariners();
   Object.assign(notice, {
     id: '0f1e8f1e-9b91-4f59-bb4f-a82d06e4f950',
-    kind: NoticeKind.AREA,
+    kind: NoticeKind.ALERT,
     title: 'Test notice',
     description: 'A notice used by tests.',
     source: 'https://example.com/notice.pdf',
@@ -38,7 +38,7 @@ describe('toNoticeDto', () => {
           },
         ],
         {
-          kind: NoticeKind.ADVISORY,
+          kind: NoticeKind.INFO,
           locationLabel: 'Kalkara Harbour',
           activeTo: new Date('2026-01-04T00:00:00.000Z'),
           distance: 300,

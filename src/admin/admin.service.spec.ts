@@ -14,7 +14,7 @@ function makeNotice(
   const notice = new NoticeToMariners();
   Object.assign(notice, {
     id: '0f1e8f1e-9b91-4f59-bb4f-a82d06e4f950',
-    kind: NoticeKind.AREA,
+    kind: NoticeKind.ALERT,
     title: 'Temporary works',
     description: 'Works in progress.',
     source: 'https://example.com/notice.pdf',
@@ -231,7 +231,7 @@ describe('AdminService', () => {
   describe('addNtm', () => {
     it('persists the notice as not-in-review and writes a manual-add log', async () => {
       const dto = {
-        kind: NoticeKind.ADVISORY,
+        kind: NoticeKind.INFO,
         title: 'Manual notice',
         description: 'Entered by admin.',
         source: 'manual:admin',

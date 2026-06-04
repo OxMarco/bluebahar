@@ -6,6 +6,8 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bullmq';
 import { TerminusModule } from '@nestjs/terminus';
+import { CacheModule } from '@nestjs/cache-manager';
+import { createKeyv } from '@keyv/redis';
 import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { configValidationSchema } from './config.schema';
 import { ScraperModule } from './scraper/scraper.module';
@@ -59,6 +61,25 @@ import { AdminModule } from './admin/admin.module';
           host: configService.getOrThrow<string>('REDIS_HOST'),
           port: configService.getOrThrow<number>('REDIS_PORT'),
         },
+      }),
+      inject: [ConfigService],
+    }),
+    // Global cache backed by the same Redis we already run, so the TTL'd entries
+    // are shared across instances rather than per-process. Namespaced to keep
+    // its keys clear of the BullMQ queue data sharing the Redis db.
+    CacheModule.registerAsync({
+      isGlobal: true,
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        stores: [
+          createKeyv(
+            `redis://${configService.getOrThrow<string>(
+              'REDIS_HOST',
+            )}:${configService.getOrThrow<number>('REDIS_PORT')}`,
+            { namespace: 'cache' },
+          ),
+        ],
+        ttl: configService.getOrThrow<number>('MAP_CACHE_TTL_MS'),
       }),
       inject: [ConfigService],
     }),

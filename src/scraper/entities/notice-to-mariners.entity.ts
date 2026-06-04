@@ -18,18 +18,25 @@ type NoticeGeometryPart = {
 
 @Entity()
 @Unique(['source', 'subKey'])
+// The dominant public read (MapService.getNotices) filters needsReview and
+// orders/ranges on activeFrom; this composite serves the filter + sort + LIMIT
+// in one index scan, and also covers the admin review queue (needsReview=true).
+// Low-selectivity singletons (kind, the needsReview boolean) are deliberately
+// omitted — the planner wouldn't use them, and they'd only tax every insert.
+@Index(['needsReview', 'activeFrom'])
 export class NoticeToMariners {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Index()
   @Column({ type: 'enum', enum: NoticeKind })
   kind!: NoticeKind;
 
   @Column()
   title!: string;
 
-  @Column()
+  // Multi-paragraph AI summary + recommended action; text rather than the
+  // default varchar to make the unbounded intent explicit.
+  @Column({ type: 'text' })
   description!: string;
 
   @Column()
@@ -41,7 +48,8 @@ export class NoticeToMariners {
   @Column({ default: '' })
   subKey!: string;
 
-  // Optional context for kind='area', absent for 'advisory'.
+  // Human-readable place name (e.g. 'Pembroke Ranges'); absent when the notice
+  // names no location. Orthogonal to `kind` — either kind may carry one.
   @Column({ nullable: true })
   locationLabel?: string;
 
@@ -57,23 +65,18 @@ export class NoticeToMariners {
   @Column({ type: 'float', nullable: true })
   distance?: number;
 
-  // Depth of the hazard itself in metres (e.g. wreck depth below sea level).
-  // Null when not stated.
-  @Column({ type: 'float', nullable: true })
-  depth?: number;
-
-  @Column({ type: 'timestamp' })
+  // All instants are timestamptz: every comparison in the service layer is
+  // against a UTC `new Date()`, so the column must store a true instant rather
+  // than a tz-naive wall clock the driver could reinterpret.
+  @Column({ type: 'timestamptz' })
   publishedAt!: Date;
 
-  @Index()
-  @Column({ type: 'timestamp' })
+  @Column({ type: 'timestamptz' })
   activeFrom!: Date;
 
-  @Index()
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamptz', nullable: true })
   activeTo?: Date; // null means "no expiry"
 
-  @Index()
   @Column({ default: false })
   needsReview!: boolean;
 
@@ -85,6 +88,6 @@ export class NoticeToMariners {
   @Column({ default: 0 })
   reports!: number;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 }

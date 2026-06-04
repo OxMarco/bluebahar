@@ -153,12 +153,6 @@ export class CreateNoticeDto {
   distance?: number;
 
   @IsOptional()
-  @Transform(optionalNumber)
-  @IsNumber()
-  @Min(0)
-  depth?: number;
-
-  @IsOptional()
   @Transform(parseAreas)
   @IsArray()
   @ValidateNested({ each: true })

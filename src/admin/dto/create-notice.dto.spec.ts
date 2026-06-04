@@ -22,7 +22,7 @@ function validate(body: Record<string, unknown>) {
 }
 
 const base = {
-  kind: NoticeKind.AREA,
+  kind: NoticeKind.ALERT,
   title: 'Temporary works',
   description: 'Works in progress.',
   source: 'https://example.com/notice.pdf',
