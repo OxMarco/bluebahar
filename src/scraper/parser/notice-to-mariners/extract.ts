@@ -13,7 +13,7 @@
 // human-readable description/locations, so a sign flip or DMS error can never
 // reach the database via the model.
 import OpenAI from 'openai';
-import { fetchBuffer } from '../../../common/utils/http';
+import { fetchBufferViaProxy } from '../../../common/utils/http';
 import { basename, readPdfTextFromBuffer } from './core';
 import { runRegex } from './regex-strategy';
 import { buildFeatureCollection } from './geometry';
@@ -38,7 +38,7 @@ export async function extractNoticeFromPdf(
   openai: OpenAI,
   opts: ExtractOptions = {},
 ): Promise<ParsedNotice[]> {
-  const buffer = await fetchBuffer(url);
+  const buffer = await fetchBufferViaProxy(url);
   return extractNoticeFromBuffer(buffer, url, openai, opts);
 }
 

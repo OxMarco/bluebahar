@@ -2,15 +2,15 @@ import {
   HealthIndicatorService,
   type HealthIndicatorResult,
 } from '@nestjs/terminus';
-import { impit } from '../utils/http';
+import { proxiedImpit } from '../utils/http';
 import { ImpitHealthIndicator } from './impit-health.indicator';
 
 jest.mock('../utils/http', () => ({
-  impit: { fetch: jest.fn() },
+  proxiedImpit: { fetch: jest.fn() },
 }));
 
-// eslint-disable-next-line @typescript-eslint/unbound-method -- impit.fetch is a jest mock with no `this` dependency.
-const fetchMock = jest.mocked(impit).fetch;
+// eslint-disable-next-line @typescript-eslint/unbound-method -- proxiedImpit.fetch is a jest mock with no `this` dependency.
+const fetchMock = jest.mocked(proxiedImpit).fetch;
 
 type SessionMock = {
   up: jest.Mock<HealthIndicatorResult, [Record<string, unknown>?]>;
@@ -48,7 +48,7 @@ describe('ImpitHealthIndicator', () => {
     fetchMock.mockResolvedValue({
       status: 200,
       statusText: 'OK',
-    } as unknown as Awaited<ReturnType<typeof impit.fetch>>);
+    } as unknown as Awaited<ReturnType<typeof proxiedImpit.fetch>>);
     const { indicator, session } = buildIndicator();
 
     await expect(
@@ -62,7 +62,7 @@ describe('ImpitHealthIndicator', () => {
     fetchMock.mockResolvedValue({
       status: 404,
       statusText: 'Not Found',
-    } as unknown as Awaited<ReturnType<typeof impit.fetch>>);
+    } as unknown as Awaited<ReturnType<typeof proxiedImpit.fetch>>);
     const { indicator, session } = buildIndicator();
 
     await indicator.pingCheck('target', 'https://example.com');
@@ -75,7 +75,7 @@ describe('ImpitHealthIndicator', () => {
     fetchMock.mockResolvedValue({
       status: 503,
       statusText: 'Service Unavailable',
-    } as unknown as Awaited<ReturnType<typeof impit.fetch>>);
+    } as unknown as Awaited<ReturnType<typeof proxiedImpit.fetch>>);
     const { indicator, session } = buildIndicator();
 
     await expect(

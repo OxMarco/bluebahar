@@ -3,7 +3,7 @@ import {
   HealthIndicatorService,
   type HealthIndicatorResult,
 } from '@nestjs/terminus';
-import { impit } from '../utils/http';
+import { proxiedImpit } from '../utils/http';
 
 @Injectable()
 export class ImpitHealthIndicator {
@@ -14,7 +14,7 @@ export class ImpitHealthIndicator {
   async pingCheck(key: string, url: string): Promise<HealthIndicatorResult> {
     const session = this.healthIndicatorService.check(key);
     try {
-      const res = await impit.fetch(url);
+      const res = await proxiedImpit.fetch(url);
       if (res.status >= 500) {
         return session.down({
           statusCode: res.status,
