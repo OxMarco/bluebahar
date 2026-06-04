@@ -106,42 +106,6 @@ describe('feature adapters', () => {
     });
   });
 
-  describe('marine-caves', () => {
-    const adapt = ADAPTERS['marine-caves'];
-
-    it('capitalizes geomorphic type as a single tag', () => {
-      const result = adapt({
-        name: 'Bottleneck Cave',
-        description: 'on Gozo',
-        naturalGeomorphologicFeatureType: 'erosional',
-        localId: '10',
-        identifier: 'https://data.gov.mt/cave/10',
-        mappingFrame: 'topOfBedrock',
-      });
-      expect(result?.tags).toEqual(['Gozo', 'Erosional']);
-      expect(result?.title).toBe('Bottleneck Cave');
-      expect(result?.description).toBe('on Gozo');
-      expect(result?.details).toEqual([
-        { label: 'Mapping frame', value: 'Top of bedrock' },
-      ]);
-      expect(result?.sourceId).toBe('10');
-      expect(result?.sourceUrl).toBe('https://data.gov.mt/cave/10');
-    });
-
-    it('uses the cave local id when upstream has no display name', () => {
-      const result = adapt({
-        name: '(Name not available)',
-        localId: '12',
-        naturalGeomorphologicFeatureType: 'erosional',
-      });
-      expect(result?.title).toBe('Marine cave 12');
-    });
-
-    it('drops the feature when name is missing', () => {
-      expect(adapt({ name: null, description: 'x' })).toBeNull();
-    });
-  });
-
   describe('anchoring-and-mooring-hotspots', () => {
     const adapt = ADAPTERS['anchoring-and-mooring-hotspots'];
 
@@ -179,8 +143,8 @@ describe('feature adapters', () => {
     });
   });
 
-  describe('water-quality', () => {
-    const adapt = ADAPTERS['water-quality'];
+  describe('beaches', () => {
+    const adapt = ADAPTERS['beaches'];
 
     const base = {
       Site_Code: 'A01',

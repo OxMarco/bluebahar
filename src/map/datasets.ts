@@ -43,13 +43,6 @@ export interface DatasetDefinition {
 // scraping (cuts IP-block risk and infrastructure).
 export const DATASETS: DatasetDefinition[] = [
   {
-    key: 'marine-utility-areas',
-    name: 'Marine utility areas',
-    kind: 'context',
-    sourceUrl:
-      'https://haleconnect.com/ows/services/org.1261.ca3351c0-2a54-43ff-87fe-710f9afcf9ef_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=am%3AManagementRestrictionOrRegulationZone&outputFormat=application%2Fjson',
-  },
-  {
     key: 'maltese-waters-contour',
     name: 'Maltese waters contour',
     kind: 'context',
@@ -62,13 +55,6 @@ export const DATASETS: DatasetDefinition[] = [
     kind: 'context',
     sourceUrl:
       'https://ows.emodnet-bathymetry.eu/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=emodnet%3Acontours&outputFormat=application%2Fjson&bbox=13.669821,35.369532,15.089278,36.499613,EPSG%3A4326',
-  },
-  {
-    key: 'swimming-zones',
-    name: 'Swimming zones',
-    kind: 'context',
-    sourceUrl:
-      'https://haleconnect.com/ows/services/org.1261.1cc518e8-38ee-4152-884f-0cc62eea4177_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=am%3AManagementRestrictionOrRegulationZone&outputFormat=application%2Fjson',
   },
   {
     key: 'conservation-area-around-wrecks',
@@ -105,18 +91,11 @@ export const DATASETS: DatasetDefinition[] = [
     sourceUrl: 'https://maltadives.com/js/Map/MapDiveSites.php',
   },
   {
-    key: 'marine-caves',
-    name: 'Marine caves',
-    kind: 'interactive',
-    sourceUrl:
-      'https://haleconnect.com/ows/services/org.1261.253f2b31-c591-41c2-9091-bb5080c9872a_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=ge%3AMappedFeature&outputFormat=application%2Fgeo%2Bjson',
-  },
-  {
     // Environmental Health Directorate bathing-water sites (the "EHD Bathing
     // Sites" layer of their public ArcGIS dashboard). Each point carries the
     // bathing-water profile, Blue Flag status and beach characteristics.
-    key: 'water-quality',
-    name: 'Water quality',
+    key: 'beaches',
+    name: 'Beaches',
     kind: 'interactive',
     refresh: 'daily',
     sourceUrl:

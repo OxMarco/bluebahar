@@ -17,10 +17,9 @@ export type FeatureAdapter = (
 // will filter these out.
 export const ADAPTERS: Record<string, FeatureAdapter> = {
   'diving-sites': adaptDivingSite,
-  'marine-caves': adaptMarineCave,
   'anchoring-and-mooring-hotspots': adaptAnchoringHotspot,
   'bunkering-areas': adaptBunkeringArea,
-  'water-quality': adaptWaterQualitySite,
+  beaches: adaptWaterQualitySite,
 };
 
 function adaptDivingSite(raw: RawProperties): NormalizedFeatureDraft | null {
@@ -77,40 +76,6 @@ function adaptDivingSite(raw: RawProperties): NormalizedFeatureDraft | null {
   };
 }
 
-function adaptMarineCave(raw: RawProperties): NormalizedFeatureDraft | null {
-  const localId = str(raw.localId);
-  const name = displayName(raw.name);
-  const title = name ?? (localId ? `Marine cave ${localId}` : undefined);
-  if (!title) return null;
-
-  const description = str(raw.description);
-  const island = extractIsland(description);
-
-  const geomorphType = str(raw.naturalGeomorphologicFeatureType);
-  // Upstream values like "erosional" / "constructional" — capitalize for display.
-  const tags = compactTags([
-    island,
-    geomorphType ? capitalize(geomorphType) : undefined,
-  ]);
-  const mappingFrame = str(raw.mappingFrame);
-  const details = compactDetails([
-    labelDetail(
-      'Mapping frame',
-      mappingFrame ? startCase(mappingFrame) : undefined,
-    ),
-  ]);
-
-  return {
-    title,
-    subtitle: 'Marine cave',
-    description,
-    tags,
-    details,
-    sourceId: localId,
-    sourceUrl: sourceUrl(raw.identifier),
-  };
-}
-
 function adaptAnchoringHotspot(
   raw: RawProperties,
 ): NormalizedFeatureDraft | null {
@@ -161,7 +126,7 @@ function adaptBunkeringArea(raw: RawProperties): NormalizedFeatureDraft | null {
 
 // Environmental Health Directorate bathing-water sites. Field names come
 // straight off the ArcGIS feature layer (Name_ENG, Blue_Flag_OR_Beach_of_Quality,
-// Bathing_Water_Profile, …) — see data/datasets/water-quality.geojson.
+// Bathing_Water_Profile, …) — see data/datasets/beaches.geojson.
 function adaptWaterQualitySite(
   raw: RawProperties,
 ): NormalizedFeatureDraft | null {
@@ -236,19 +201,9 @@ function str(v: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function displayName(v: unknown): string | undefined {
-  const value = str(v);
-  if (!value) return undefined;
-  return value === '(Name not available)' ? undefined : value;
-}
-
 function sourceUrl(v: unknown): string | undefined {
   const value = str(v);
   return value && /^https?:\/\//i.test(value) ? value : undefined;
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 // Upstream encodes booleans as "Yes"/"No" strings. Returns undefined for
@@ -281,15 +236,6 @@ function publicConvenienceLabel(v: unknown): string | undefined {
   const value = str(v);
   if (!value || /^n\/?a$/i.test(value)) return undefined;
   return 'Available nearby';
-}
-
-function startCase(s: string): string {
-  const spaced = s
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
 }
 
 function labelDetail(label: string, value: string | undefined) {
@@ -332,12 +278,6 @@ function dateOnly(value: string | undefined): string | undefined {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return undefined;
   return parsed.toISOString().slice(0, 10);
-}
-
-function extractIsland(description: string | undefined): string | undefined {
-  if (!description) return undefined;
-  const match = /\b(Gozo|Malta|Comino)\b/i.exec(description);
-  return match ? capitalize(match[1].toLowerCase()) : undefined;
 }
 
 function depthDetail(

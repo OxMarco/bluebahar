@@ -36,11 +36,9 @@ describe('DatasetCatalogService', () => {
   });
 
   it('surfaces publisher attribution for datasets that declare it', () => {
-    const waterQuality = service
-      .list()
-      .find((dataset) => dataset.key === 'water-quality');
+    const beaches = service.list().find((dataset) => dataset.key === 'beaches');
 
-    expect(waterQuality?.attribution).toEqual({
+    expect(beaches?.attribution).toEqual({
       name: 'Environmental Health Directorate, Ministry for Health (Malta)',
       url: 'https://environmentalhealth.gov.mt/en/ehs/wrau/bathing-water-profiles/',
     });
