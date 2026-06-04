@@ -26,6 +26,11 @@ import type { NormalizedFeatureProperties } from './normalize/normalized-feature
 // resolved from process.cwd() since both `npm start` and the Dockerfile's
 // WORKDIR /app put us at the project root.
 const DATASETS_DIR = resolve(process.cwd(), 'data/datasets');
+// GeometryCollection is intentionally excluded: Mapbox GL — and so the app's
+// rnmapbox/maps ShapeSource — silently refuses to render it, so a dataset that
+// smuggled one in would validate fine and then vanish on the map. Reject it at
+// load time instead. (Notices avoid this by shipping a FeatureCollection — see
+// notice-serializer.ts.)
 const SUPPORTED_GEOMETRY_TYPES = new Set([
   'Point',
   'MultiPoint',
@@ -33,7 +38,6 @@ const SUPPORTED_GEOMETRY_TYPES = new Set([
   'MultiLineString',
   'Polygon',
   'MultiPolygon',
-  'GeometryCollection',
 ]);
 
 export type GeoJsonBbox = [number, number, number, number];
@@ -297,7 +301,7 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
         id,
         ...(bbox ? { bbox } : {}),
         geometry: feature.geometry,
-        properties: { ...normalized, id },
+        properties: { ...normalized, id, ...stylingPrimitives(normalized) },
       });
     }
     const dropped = droppedNoTitle + droppedNoGeometry;
@@ -319,6 +323,27 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
     });
     return { payload, summary };
   }
+}
+
+// Mapbox/MapLibre (and so rnmapbox/maps) can only read primitive feature
+// properties in data-driven style expressions, and the native bridge stringifies
+// nested objects on the way to the app. We keep the nested fields — the client
+// JSON.parses them for the detail sheet — but also surface the few worth styling
+// on (rating, tags) as flat primitives a `['get', …]` expression can use.
+function stylingPrimitives(
+  normalized: Omit<NormalizedFeatureProperties, 'id'>,
+): Record<string, string | number> {
+  const flat: Record<string, string | number> = {};
+  if (normalized.rating) {
+    flat.ratingValue = normalized.rating.value;
+    flat.ratingCount = normalized.rating.count;
+  }
+  if (normalized.tags?.length) {
+    // Comma-wrapped so a tag membership test is a clean substring match:
+    // ['in', ',Blue Flag,', ['get', 'tagsCsv']].
+    flat.tagsCsv = `,${normalized.tags.join(',')},`;
+  }
+  return flat;
 }
 
 function validateFeatureCollection(
@@ -397,21 +422,6 @@ function validateGeometry(
     );
   }
   types.add(type);
-
-  if (type === 'GeometryCollection') {
-    if (
-      !Array.isArray(geometry.geometries) ||
-      geometry.geometries.length === 0
-    ) {
-      throw new Error(
-        `Feature ${featureIndex} in "${datasetKey}" has an empty GeometryCollection`,
-      );
-    }
-    for (const child of geometry.geometries) {
-      validateGeometry(datasetKey, bounds, featureIndex, child, types);
-    }
-    return;
-  }
 
   validateCoordinates(
     datasetKey,

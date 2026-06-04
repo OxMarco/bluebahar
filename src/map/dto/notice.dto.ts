@@ -11,15 +11,34 @@ export type GeoJsonPolygon = {
   type: 'Polygon';
   coordinates: [number, number][][];
 };
-export type GeoJsonGeometryCollection = {
-  type: 'GeometryCollection';
-  geometries: NoticeGeometry[];
+// One drawable area part of a notice. Always a simple geometry — never a
+// GeometryCollection, which Mapbox GL (and thus rnmapbox/maps) refuses to
+// render inside a ShapeSource.
+export type NoticeGeometry = GeoJsonPoint | GeoJsonLineString | GeoJsonPolygon;
+
+export type NoticeGeometryKind = 'point' | 'line' | 'polygon';
+
+export type NoticeFeature = {
+  type: 'Feature';
+  geometry: NoticeGeometry;
+  properties: {
+    // The owning notice, so a tapped feature resolves back to its NoticeDto.
+    noticeId: string;
+    // Index of this part within the notice's source `areas`.
+    part: number;
+    // Lets the client route the part to the right Fill/Line/Circle layer.
+    kind: NoticeGeometryKind;
+  };
 };
-export type NoticeGeometry =
-  | GeoJsonPoint
-  | GeoJsonLineString
-  | GeoJsonPolygon
-  | GeoJsonGeometryCollection;
+
+// A notice's geometry ships as a GeoJSON FeatureCollection — one Feature per
+// area part — so the client can hand it straight to a rnmapbox/Mapbox
+// ShapeSource (which accepts a Feature/FeatureCollection, not a bare geometry)
+// and so mixed point/line/polygon parts coexist without a GeometryCollection.
+export type NoticeFeatureCollection = {
+  type: 'FeatureCollection';
+  features: NoticeFeature[];
+};
 
 export class GeoCoordinateDto {
   latitude!: number;
@@ -42,7 +61,7 @@ export class NoticeDto {
   activeTo?: string | null;
   distance?: number | null;
   reviewReasons?: string[];
-  geometry!: NoticeGeometry | null;
+  geometry!: NoticeFeatureCollection | null;
   // Single anchor (first area part) — used for the "near here" reference.
   representativePoint!: GeoCoordinateDto | null;
   // One anchor per drawable area part, so every shape the client renders for a

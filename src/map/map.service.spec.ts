@@ -97,7 +97,20 @@ describe('MapService', () => {
       expect.objectContaining({
         kind: NoticeKind.ALERT,
         title: 'Temporary works',
-        geometry: { type: 'Point', coordinates: [14.5, 35.9] },
+        geometry: {
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: [14.5, 35.9] },
+              properties: {
+                noticeId: '0f1e8f1e-9b91-4f59-bb4f-a82d06e4f950',
+                part: 0,
+                kind: 'point',
+              },
+            },
+          ],
+        },
       }),
     );
     expect(find).toHaveBeenCalledWith(

@@ -27,6 +27,8 @@ function makeNotice(
 }
 
 describe('toNoticeDto', () => {
+  const NOTICE_ID = '0f1e8f1e-9b91-4f59-bb4f-a82d06e4f950';
+
   it('serializes point notices in GeoJSON coordinate order', () => {
     const dto = toNoticeDto(
       makeNotice(
@@ -52,7 +54,16 @@ describe('toNoticeDto', () => {
         activeFrom: '2026-01-02T00:00:00.000Z',
         activeTo: '2026-01-04T00:00:00.000Z',
         distance: 300,
-        geometry: { type: 'Point', coordinates: [14.5, 35.9] },
+        geometry: {
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: [14.5, 35.9] },
+              properties: { noticeId: NOTICE_ID, part: 0, kind: 'point' },
+            },
+          ],
+        },
       }),
     );
   });
@@ -73,19 +84,28 @@ describe('toNoticeDto', () => {
     );
 
     expect(dto.geometry).toEqual({
-      type: 'Polygon',
-      coordinates: [
-        [
-          [14.5, 35.9],
-          [14.51, 35.91],
-          [14.52, 35.9],
-          [14.5, 35.9],
-        ],
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [
+              [
+                [14.5, 35.9],
+                [14.51, 35.91],
+                [14.52, 35.9],
+                [14.5, 35.9],
+              ],
+            ],
+          },
+          properties: { noticeId: NOTICE_ID, part: 0, kind: 'polygon' },
+        },
       ],
     });
   });
 
-  it('returns a geometry collection when a notice has multiple drawable parts', () => {
+  it('returns a FeatureCollection when a notice has multiple drawable parts', () => {
     const dto = toNoticeDto(
       makeNotice([
         {
@@ -105,16 +125,24 @@ describe('toNoticeDto', () => {
     );
 
     expect(dto.geometry).toEqual({
-      type: 'GeometryCollection',
-      geometries: [
+      type: 'FeatureCollection',
+      features: [
         {
-          type: 'LineString',
-          coordinates: [
-            [14.5, 35.9],
-            [14.51, 35.91],
-          ],
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [14.5, 35.9],
+              [14.51, 35.91],
+            ],
+          },
+          properties: { noticeId: NOTICE_ID, part: 0, kind: 'line' },
         },
-        { type: 'Point', coordinates: [14.52, 35.92] },
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [14.52, 35.92] },
+          properties: { noticeId: NOTICE_ID, part: 1, kind: 'point' },
+        },
       ],
     });
   });

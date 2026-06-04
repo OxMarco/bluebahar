@@ -70,7 +70,7 @@
       if (!id) return;
 
       const geom = readJson('geom-' + id);
-      const rep = readJson('rep-' + id);
+      const reps = readJson('reps-' + id);
 
       clearSelection();
       selectedRow = row;
@@ -83,8 +83,13 @@
           : 'Showing selected notice.';
       }
 
+      // One group holds both the area outlines and a pin per area, so the whole
+      // notice clears together and fitBounds frames every shape and marker.
+      const group = L.layerGroup().addTo(map);
+      activeLayer = group;
+
       if (geom) {
-        activeLayer = L.geoJSON(geom, {
+        L.geoJSON(geom, {
           style: {
             color: '#152051',
             weight: 2,
@@ -100,18 +105,22 @@
               fillOpacity: 0.5,
             });
           },
-        }).addTo(map);
-
-        const bounds = activeLayer.getBounds();
-        if (bounds && bounds.isValid && bounds.isValid()) {
-          map.fitBounds(bounds, { padding: [24, 24], maxZoom: 14 });
-          return;
-        }
+        }).addTo(group);
       }
 
-      if (rep && typeof rep.latitude === 'number' && typeof rep.longitude === 'number') {
-        activeLayer = L.marker([rep.latitude, rep.longitude]).addTo(map);
-        map.setView([rep.latitude, rep.longitude], 13);
+      // One marker per area (representativePoints): a multi-area notice (a cable
+      // plus a wreck, two firing ranges, …) renders every shape, so each must
+      // carry its own pin or the shapes without one are visible but untappable.
+      const points = Array.isArray(reps) ? reps : [];
+      points.forEach(function (p) {
+        if (p && typeof p.latitude === 'number' && typeof p.longitude === 'number') {
+          L.marker([p.latitude, p.longitude]).addTo(group);
+        }
+      });
+
+      const bounds = L.featureGroup(group.getLayers()).getBounds();
+      if (bounds && bounds.isValid && bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [24, 24], maxZoom: 14 });
         return;
       }
 

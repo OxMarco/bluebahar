@@ -2,6 +2,8 @@ import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity'
 import {
   NoticeDto,
   NoticeGeometry,
+  NoticeFeature,
+  NoticeFeatureCollection,
   GeoJsonPoint,
   GeoJsonLineString,
   GeoJsonPolygon,
@@ -54,13 +56,34 @@ function isRingClosed(coords: [number, number][]): boolean {
   return a[0] === b[0] && a[1] === b[1];
 }
 
-function buildGeometry(parts: EntityGeometryPart[]): NoticeGeometry | null {
-  const built = parts
-    .map(partToGeometry)
-    .filter((g): g is NoticeGeometry => g !== null);
-  if (built.length === 0) return null;
-  if (built.length === 1) return built[0];
-  return { type: 'GeometryCollection', geometries: built };
+function partToFeature(
+  part: EntityGeometryPart,
+  index: number,
+  noticeId: string,
+): NoticeFeature | null {
+  const geometry = partToGeometry(part);
+  if (geometry === null) return null;
+  return {
+    type: 'Feature',
+    geometry,
+    properties: { noticeId, part: index, kind: part.geometryType },
+  };
+}
+
+// Every drawable part becomes its own GeoJSON Feature. Mapbox GL — and so
+// rnmapbox/maps on the app — won't render a GeometryCollection inside a
+// ShapeSource, so a multi-part notice (a cable plus a wreck, two firing ranges)
+// must ship as a FeatureCollection. Single-part notices use the same shape so
+// the client always feeds one type to its ShapeSource. `null` when no part
+// yields valid GeoJSON, mirroring the empty-geometry case the client guards on.
+function buildFeatureCollection(
+  entity: NoticeToMariners,
+): NoticeFeatureCollection | null {
+  const features = entity.areas
+    .map((part, index) => partToFeature(part, index, entity.id))
+    .filter((feature): feature is NoticeFeature => feature !== null);
+  if (features.length === 0) return null;
+  return { type: 'FeatureCollection', features };
 }
 
 export function toNoticeDto(entity: NoticeToMariners): NoticeDto {
@@ -75,7 +98,7 @@ export function toNoticeDto(entity: NoticeToMariners): NoticeDto {
     activeTo: entity.activeTo ? entity.activeTo.toISOString() : null,
     distance: entity.distance ?? null,
     reviewReasons: entity.reviewReasons ?? [],
-    geometry: buildGeometry(entity.areas),
+    geometry: buildFeatureCollection(entity),
     representativePoint: representativePoint(entity),
     representativePoints: representativePoints(entity),
     boundingCircle: boundingCircle(entity),
