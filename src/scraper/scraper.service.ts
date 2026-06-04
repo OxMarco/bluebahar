@@ -72,7 +72,7 @@ export class ScraperService implements OnApplicationBootstrap {
       // with an id already present, so a duplicate enqueue (overlapping cron
       // run, retry, clock skew) can't queue the same notice twice. Belt-and-
       // braces on top of the storedUrls / inFlightUrls filtering above.
-      const jobId = `ntm:${createHash('sha256').update(link.url).digest('hex')}`;
+      const jobId = `ntm-${createHash('sha256').update(link.url).digest('hex')}`;
       await this.queue.add('notice-to-mariners', { url: link.url }, { jobId });
     }
 
