@@ -6,7 +6,11 @@ import {
   GeoJsonLineString,
   GeoJsonPolygon,
 } from './dto/notice.dto';
-import { boundingCircle, representativePoint } from './notice-geometry';
+import {
+  boundingCircle,
+  representativePoint,
+  representativePoints,
+} from './notice-geometry';
 
 type EntityGeometryPart = NoticeToMariners['areas'][number];
 
@@ -73,6 +77,7 @@ export function toNoticeDto(entity: NoticeToMariners): NoticeDto {
     reviewReasons: entity.reviewReasons ?? [],
     geometry: buildGeometry(entity.areas),
     representativePoint: representativePoint(entity),
+    representativePoints: representativePoints(entity),
     boundingCircle: boundingCircle(entity),
   };
 }

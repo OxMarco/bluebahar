@@ -53,19 +53,31 @@ function anchorForPart(part: EntityPart): GeoCoordinate | null {
   return first;
 }
 
-// Anchor used as the pin and the "near here" reference point on the client.
-// Takes the first part that yields a usable point — preserving the historical
-// first-part bias — but anchors *within* that part's shape (see anchorForPart)
-// instead of grabbing its first raw vertex. Returns null only when a notice has
-// no usable geometry — the same case the serializer maps to `geometry: null`.
+// One anchor per drawable area part, in source order. Each anchored *within*
+// its part's shape (see anchorForPart). A notice with several parts (a cable
+// plus a wreck, two firing ranges, …) renders every shape on the map, so each
+// must carry its own pin — otherwise the parts without a pin are visible but
+// untappable and the mariner can't find out what they are. Parts that yield no
+// usable point are skipped, so the array can be shorter than `areas` (and empty
+// when the notice has no usable geometry — the `geometry: null` case).
+export function representativePoints(
+  entity: NoticeToMariners,
+): GeoCoordinate[] {
+  const points: GeoCoordinate[] = [];
+  for (const part of entity.areas) {
+    const anchor = anchorForPart(part);
+    if (anchor) points.push(anchor);
+  }
+  return points;
+}
+
+// Single anchor for the "near here" reference point and the safety-berth
+// circle — the first usable part, preserving the historical first-part bias.
+// Null only when a notice has no usable geometry (same case as `geometry: null`).
 export function representativePoint(
   entity: NoticeToMariners,
 ): GeoCoordinate | null {
-  for (const part of entity.areas) {
-    const anchor = anchorForPart(part);
-    if (anchor) return anchor;
-  }
-  return null;
+  return representativePoints(entity)[0] ?? null;
 }
 
 // Smallest axis-aligned bounding circle around every coordinate in the notice,

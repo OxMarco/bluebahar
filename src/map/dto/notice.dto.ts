@@ -43,6 +43,10 @@ export class NoticeDto {
   distance?: number | null;
   reviewReasons?: string[];
   geometry!: NoticeGeometry | null;
+  // Single anchor (first area part) — used for the "near here" reference.
   representativePoint!: GeoCoordinateDto | null;
+  // One anchor per drawable area part, so every shape the client renders for a
+  // multi-part notice gets its own tappable pin. Empty when no usable geometry.
+  representativePoints!: GeoCoordinateDto[];
   boundingCircle!: BoundingCircleDto | null;
 }

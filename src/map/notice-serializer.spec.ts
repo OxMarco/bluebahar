@@ -209,6 +209,59 @@ describe('toNoticeDto', () => {
     });
   });
 
+  describe('representativePoints', () => {
+    it('emits one anchor per drawable part so every shape is tappable', () => {
+      const dto = toNoticeDto(
+        makeNotice([
+          {
+            label: 'Cable',
+            geometryType: 'line',
+            points: [
+              { lat: 35.9, long: 14.5 },
+              { lat: 35.91, long: 14.51 },
+            ],
+          },
+          {
+            label: 'Marker',
+            geometryType: 'point',
+            points: [{ lat: 35.92, long: 14.52 }],
+          },
+        ]),
+      );
+
+      expect(dto.representativePoints).toHaveLength(2);
+      // First anchor is also the singular representativePoint.
+      expect(dto.representativePoints[0]).toEqual(dto.representativePoint);
+      // Second anchor is the point part.
+      expect(dto.representativePoints[1]).toEqual({
+        latitude: 35.92,
+        longitude: 14.52,
+      });
+    });
+
+    it('skips parts with no usable point', () => {
+      const dto = toNoticeDto(
+        makeNotice([
+          { label: 'Empty', geometryType: 'line', points: [] },
+          {
+            label: 'Wreck',
+            geometryType: 'point',
+            points: [{ lat: 35.9, long: 14.5 }],
+          },
+        ]),
+      );
+
+      expect(dto.representativePoints).toEqual([
+        { latitude: 35.9, longitude: 14.5 },
+      ]);
+    });
+
+    it('is empty when the notice has no usable geometry', () => {
+      const dto = toNoticeDto(makeNotice([]));
+      expect(dto.representativePoints).toEqual([]);
+    });
+  });
+
   describe('boundingCircle', () => {
     it('uses the notice distance as the radius for a single point hazard', () => {
       const dto = toNoticeDto(
