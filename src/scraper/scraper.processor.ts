@@ -42,23 +42,15 @@ export class ScraperProcessor extends WorkerHost {
     }
   }
 
-  // BullMQ fires 'failed' on every attempt; only escalate to Sentry once retries
-  // are exhausted so a flaky job produces one alert, not `attempts` alerts.
-  // @sentry/nestjs auto-instruments BullMQ for tracing but does not capture
-  // failures as exceptions — that's still on us.
+  // BullMQ fires 'failed' on every attempt. @sentry/nestjs already captures
+  // thrown process() failures; this hook keeps the worker logs informative.
   @OnWorkerEvent('failed')
   onJobFailed(job: Job, err: Error) {
     const maxAttempts = job.opts.attempts ?? 1;
-    const terminal = job.attemptsMade >= maxAttempts;
     this.logger.error(
       `Job ${job.name} ${job.id} failed (attempt ${job.attemptsMade}/${maxAttempts}): ${err.message}`,
       err.stack,
     );
-    if (!terminal) return;
-    Sentry.captureException(err, {
-      tags: { queue: 'scraper', job: job.name },
-      extra: { jobId: job.id, attemptsMade: job.attemptsMade, data: job.data },
-    });
   }
 
   private async handleNoticeToMariners(job: Job<NoticeJobData>) {
@@ -78,7 +70,7 @@ export class ScraperProcessor extends WorkerHost {
     });
     await this.logsRepository.save(log);
 
-    // Records that failed geo-sanity / gazetteer lookup are persisted (hidden
+    // Records that failed extraction sanity checks are persisted (hidden
     // from public getters) so a human can review them, but we still want a
     // Sentry alert per flagged record so they don't sit unnoticed.
     // captureMessage rather than throw — throwing would mark the job failed
@@ -94,7 +86,12 @@ export class ScraperProcessor extends WorkerHost {
       Sentry.captureMessage('Notice to Mariners flagged for manual review', {
         level: 'warning',
         tags: { scraper: 'notice-to-mariners', kind: p.kind },
-        extra: { url, subKey: p.subKey, title: p.title },
+        extra: {
+          url,
+          subKey: p.subKey,
+          title: p.title,
+          reviewReasons: p.reviewReasons,
+        },
       });
     }
     if (flagged.length === 0) {

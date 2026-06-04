@@ -5,7 +5,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bullmq';
-import { EventEmitterModule } from '@nestjs/event-emitter';
 import { TerminusModule } from '@nestjs/terminus';
 import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { configValidationSchema } from './config.schema';
@@ -63,7 +62,6 @@ import { AdminModule } from './admin/admin.module';
       }),
       inject: [ConfigService],
     }),
-    EventEmitterModule.forRoot(),
     TerminusModule.forRoot(),
     SentryModule.forRoot(),
     ScraperModule,

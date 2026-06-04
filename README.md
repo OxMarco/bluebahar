@@ -14,7 +14,7 @@ Backend to scrape data about Maltese waters.
 
 Browser-only. Visit `/admin/login` and enter the `ADMIN_API_KEY` value; on success the server mints a JWT signed with `ADMIN_JWT_SECRET` and stores it in an httpOnly, `SameSite=Strict` cookie scoped to `/admin`. Cookie lifetime is `ADMIN_SESSION_TTL_SECONDS` (default 3600).
 
-- `/admin/review` — notices flagged by the LLM extractor (`needsReview=true`); approve to publish, delete to reject.
+- `/admin/review` — notices flagged by deterministic extraction sanity checks (`needsReview=true`); approve to publish, delete to reject.
 - `/admin/flagged?minReports=` — notices with at least `minReports` user reports (default 1); dismiss to reset the counter, delete to remove.
 - `/admin/logs?logType=` — scraping/ingestion log entries, newest first. Logs older than 14 days are pruned daily by a midnight cron.
 - `/admin/new` — manually create a notice (skips the review queue). Geometries (`areas`) aren't editable from the form yet.

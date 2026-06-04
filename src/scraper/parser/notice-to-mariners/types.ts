@@ -58,17 +58,16 @@ export type NoticeExtraction = {
   date: string | null; // ISO YYYY-MM-DD
   title: string | null;
   document_type: DocumentType;
-  valid_from: string | null;
-  valid_to: string | null;
+  valid_from: string | null; // ISO date or UTC timestamp
+  valid_to: string | null; // ISO date or UTC timestamp
   referenced_notices: string[]; // e.g. ["09/2023"]
   charts_affected: string[];
   areas: Area[];
 };
 
-// Strategy metadata: latency, cost, and free-form notes (coord counts, fallbacks).
+// Strategy metadata: latency and free-form notes (coord counts, fallbacks).
 export type StrategyMeta = {
   latency_ms: number;
-  cost_usd: number | null;
   model: string | null;
   notes: string[];
 };

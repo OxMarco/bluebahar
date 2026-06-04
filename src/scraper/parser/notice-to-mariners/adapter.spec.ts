@@ -159,6 +159,7 @@ describe('adaptToParsedNotice', () => {
     expect(result.kind).toBe(NoticeKind.ADVISORY);
     expect(result.areas).toHaveLength(0);
     expect(result.needsReview).toBe(false);
+    expect(result.reviewReasons).toEqual([]);
   });
 
   describe('needsReview', () => {
@@ -174,6 +175,7 @@ describe('adaptToParsedNotice', () => {
         }),
       );
       expect(result.needsReview).toBe(true);
+      expect(result.reviewReasons).toContain('point_outside_malta_bbox:1A');
     });
 
     it('does NOT flag a coastline-closure straight-line fallback (still plottable)', () => {
@@ -200,6 +202,7 @@ describe('adaptToParsedNotice', () => {
         }),
       );
       expect(result.needsReview).toBe(false);
+      expect(result.reviewReasons).toEqual([]);
     });
 
     it('flags a restriction that yielded no geometry despite having coordinates', () => {
@@ -211,6 +214,9 @@ describe('adaptToParsedNotice', () => {
         }),
       );
       expect(result.needsReview).toBe(true);
+      expect(result.reviewReasons).toContain(
+        'restriction_with_coordinates_but_no_geometry',
+      );
     });
 
     it('flags a likely-scanned PDF', () => {
@@ -218,6 +224,33 @@ describe('adaptToParsedNotice', () => {
         input({ notes: ['coords:0', 'likely_scanned_pdf:empty_text_layer'] }),
       );
       expect(result.needsReview).toBe(true);
+      expect(result.reviewReasons).toContain(
+        'likely_scanned_pdf:empty_text_layer',
+      );
+    });
+
+    it('flags generic fallback geometries for manual verification', () => {
+      const result = adaptToParsedNotice(
+        input({
+          extraction: extraction({
+            areas: [
+              area({
+                restrictions: ['generic extraction — verify geometry'],
+              }),
+            ],
+          }),
+          featureCollection: fc([
+            {
+              geometry: { type: 'Point', coordinates: [14.5, 35.9] },
+              properties: {},
+            },
+          ]),
+        }),
+      );
+      expect(result.needsReview).toBe(true);
+      expect(result.reviewReasons).toContain(
+        'generic_extraction_verify_geometry',
+      );
     });
   });
 
@@ -231,7 +264,6 @@ describe('adaptToParsedNotice', () => {
         validity: '8 June 2026',
         model: 'gpt-5.5',
         latency_ms: 10,
-        cost_usd: 0.001,
       };
       const result = adaptToParsedNotice(input({ enrichment }));
       expect(result.description).toBe(
@@ -274,6 +306,28 @@ describe('adaptToParsedNotice', () => {
       expect(result.publishedAt.toISOString()).toBe('2026-06-01T00:00:00.000Z');
       expect(result.activeFrom.toISOString()).toBe('2026-06-02T00:00:00.000Z');
       expect(result.activeTo).toBeUndefined();
+    });
+
+    it('parses timestamp validity and treats date-only activeTo as end-of-day', () => {
+      const exact = adaptToParsedNotice(
+        input({
+          extraction: extraction({
+            valid_from: '2026-06-08T14:30:00.000Z',
+            valid_to: '2026-06-08T16:00:00.000Z',
+          }),
+        }),
+      );
+      expect(exact.activeFrom.toISOString()).toBe('2026-06-08T14:30:00.000Z');
+      expect(exact.activeTo?.toISOString()).toBe('2026-06-08T16:00:00.000Z');
+
+      const dateOnly = adaptToParsedNotice(
+        input({
+          extraction: extraction({
+            valid_to: '2026-06-08',
+          }),
+        }),
+      );
+      expect(dateOnly.activeTo?.toISOString()).toBe('2026-06-08T23:59:59.999Z');
     });
 
     it('derives title from referenceId when the extraction has no title', () => {

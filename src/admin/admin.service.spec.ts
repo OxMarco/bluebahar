@@ -163,13 +163,18 @@ describe('AdminService', () => {
   });
 
   describe('approveNtM', () => {
-    it('clears needsReview without touching reports', async () => {
-      const notice = makeNotice({ needsReview: true, reports: 4 });
+    it('clears needsReview and reasons without touching reports', async () => {
+      const notice = makeNotice({
+        needsReview: true,
+        reports: 4,
+        reviewReasons: ['generic_extraction_verify_geometry'],
+      });
       noticeFindOneBy.mockResolvedValue(notice);
 
       await service.approveNtM(notice.id);
 
       expect(notice.needsReview).toBe(false);
+      expect(notice.reviewReasons).toEqual([]);
       expect(notice.reports).toBe(4);
       expect(noticeSave).toHaveBeenCalledWith(notice);
     });

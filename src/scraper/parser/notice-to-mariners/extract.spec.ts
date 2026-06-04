@@ -22,10 +22,19 @@ function fixture(name: string): { text: string; pages: number } {
 
 function pipeline(name: string) {
   const { text, pages } = fixture(name);
-  const { extraction, meta } = runRegex(text, pages, `${name}.pdf`);
+  return pipelineText(text, pages, `${name}.pdf`, `file://${name}.pdf`);
+}
+
+function pipelineText(
+  text: string,
+  pages = 1,
+  sourceFile = 'synthetic.pdf',
+  source = `file://${sourceFile}`,
+) {
+  const { extraction, meta } = runRegex(text, pages, sourceFile);
   const featureCollection = buildFeatureCollection(extraction);
   return adaptToParsedNotice({
-    source: `file://${name}.pdf`,
+    source,
     extraction,
     featureCollection,
     enrichment: null,
@@ -62,6 +71,9 @@ describe('regex -> geometry -> adapter (real notice text)', () => {
         (a) => a.geometryType === 'polygon' && a.points.length > 3,
       ),
     ).toBe(true);
+    expect(notice.activeFrom.toISOString()).toBe('2026-06-08T14:30:00.000Z');
+    expect(notice.activeTo?.toISOString()).toBe('2026-06-08T16:00:00.000Z');
+    expect(notice.needsReview).toBe(false);
   });
 
   it('classifies a coordinate-less cumulative notice as advisory', () => {
@@ -70,6 +82,48 @@ describe('regex -> geometry -> adapter (real notice text)', () => {
     expect(notice.kind).toBe('advisory');
     expect(notice.needsReview).toBe(false);
     expect(notice.description.length).toBeGreaterThan(0);
+  });
+
+  it('flags catch-all generic geometry for manual review', () => {
+    const notice = pipelineText(`
+PORTS AND YACHTING DIRECTORATE
+NOTICE TO MARINERS No 77 of 2026
+3 June 2026
+Temporary restricted area
+Mariners are notified that a restricted area is established.
+Position Latitude (N) Longitude (E)
+A 35° 55'.540 014° 28'.320
+B 35° 59'.460 014° 27'.150
+C 35° 58'.290 014° 32'.190
+`);
+
+    expect(notice.kind).toBe('area');
+    expect(notice.needsReview).toBe(true);
+    expect(notice.reviewReasons).toContain(
+      'generic_extraction_verify_geometry',
+    );
+  });
+
+  it('flags coordinates dropped by generic scanning as outside Malta bounds', () => {
+    const notice = pipelineText(`
+PORTS AND YACHTING DIRECTORATE
+NOTICE TO MARINERS No 78 of 2026
+3 June 2026
+Temporary restricted area
+Mariners are notified that a restricted area is established.
+Position Latitude (N) Longitude (E)
+A 35° 55'.540 014° 28'.320
+B 35° 59'.460 015° 27'.150
+C 35° 58'.290 014° 32'.190
+D 35° 57'.290 014° 31'.190
+`);
+
+    expect(notice.needsReview).toBe(true);
+    expect(
+      notice.reviewReasons.some((r) =>
+        r.startsWith('generic_coord_outside_malta_bbox:'),
+      ),
+    ).toBe(true);
   });
 });
 

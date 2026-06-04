@@ -77,6 +77,11 @@ export class NoticeToMariners {
   @Column({ default: false })
   needsReview!: boolean;
 
+  // Machine-readable reasons why `needsReview` was set. Kept so the admin review
+  // queue can explain what looked suspicious instead of showing only a boolean.
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  reviewReasons!: string[];
+
   @Column({ default: 0 })
   reports!: number;
 

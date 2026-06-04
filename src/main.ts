@@ -1,4 +1,5 @@
 import './instrument';
+import * as Sentry from '@sentry/nestjs';
 import { NestFactory, Reflector } from '@nestjs/core';
 import {
   ValidationPipe,
@@ -160,7 +161,11 @@ async function bootstrap() {
   await app.listen(process.env.PORT ?? 3000);
 }
 
-bootstrap().catch((err) => {
+bootstrap().catch(async (err) => {
+  Sentry.captureException(err, { tags: { phase: 'bootstrap' } });
   Logger.error(err, 'Bootstrap');
+  await Sentry.flush(2000).catch((flushErr) => {
+    Logger.error(flushErr, 'SentryFlush');
+  });
   process.exit(1);
 });

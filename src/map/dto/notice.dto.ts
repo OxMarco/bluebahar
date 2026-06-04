@@ -41,6 +41,7 @@ export class NoticeDto {
   activeFrom!: string;
   activeTo?: string | null;
   distance?: number | null;
+  reviewReasons?: string[];
   geometry!: NoticeGeometry | null;
   representativePoint!: GeoCoordinateDto | null;
   boundingCircle!: BoundingCircleDto | null;

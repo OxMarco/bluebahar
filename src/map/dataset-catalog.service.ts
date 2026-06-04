@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { HealthIndicatorResult } from '@nestjs/terminus';
+import * as Sentry from '@sentry/nestjs';
 import { bbox as turfBbox } from '@turf/bbox';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -118,6 +119,10 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
         this.logger.error(
           `Failed to load dataset "${def.key}" from ${filePath}: ${message}`,
         );
+        Sentry.captureException(err, {
+          tags: { dataset: def.key, phase: 'dataset-bootstrap' },
+          extra: { filePath },
+        });
       }
     }
     this.logger.log(

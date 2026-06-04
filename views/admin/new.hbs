@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   {{> admin-head}}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body class="bg-paper text-ink">
   <div class="min-h-screen flex">
@@ -9,7 +10,7 @@
     <main class="flex-1 p-6 md:p-10">
       <header class="mb-6">
         <h1 class="text-2xl font-display font-semibold">{{title}}</h1>
-        <p class="text-sm text-ink/60 mt-1">Manually add a notice. Skips the LLM extraction review queue.</p>
+        <p class="text-sm text-ink/60 mt-1">Manually add a notice. Skips the extraction review queue.</p>
       </header>
 
       {{#if success}}
@@ -84,8 +85,27 @@
           <input type="number" min="0" step="any" name="depth" value="{{form.depth}}" class="border border-ink/15 rounded-md px-3 py-2" />
         </label>
 
-        <div class="sm:col-span-2 text-xs text-ink/55 -mt-1">
-          Geometries (<code>areas</code>) aren't editable in this form yet. Use the authenticated admin endpoint (<code>POST /admin/notices</code>) with a JSON body for notices that need polygons or coordinates.
+        <div class="sm:col-span-2 flex flex-col gap-3 border-t border-ink/10 pt-4 mt-1">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <span class="text-xs uppercase tracking-wider text-ink/55">Geometries</span>
+              <p class="text-xs text-ink/55 mt-1">Add one or more areas. Each can be a point, line, or polygon. Pick a part, then click the map to drop points, or type coordinates directly.</p>
+            </div>
+            <button type="button" id="geometry-add-part" class="bg-ink text-white text-xs rounded-md px-3 py-1.5 hover:opacity-90 whitespace-nowrap">Add geometry part</button>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            <div id="geometry-parts" class="geometry-parts"></div>
+            <div>
+              <div id="geometry-map" class="geometry-map"></div>
+              <p id="geometry-map-hint" class="text-xs text-ink/55 mt-2">Add a geometry part to start drawing.</p>
+            </div>
+          </div>
+
+          <p id="geometry-empty" class="text-xs text-ink/55">No geometries added — this notice will have no location on the map.</p>
+
+          <input type="hidden" name="areas" id="areas-input" />
+          <script type="application/json" id="initial-areas">{{{json form.areas}}}</script>
         </div>
 
         <div class="sm:col-span-2 flex justify-end gap-2 pt-2">
@@ -95,5 +115,7 @@
       </form>
     </main>
   </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script src="/admin-new-geometry.js" defer></script>
 </body>
 </html>

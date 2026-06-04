@@ -70,6 +70,7 @@ export function toNoticeDto(entity: NoticeToMariners): NoticeDto {
     activeFrom: entity.activeFrom.toISOString(),
     activeTo: entity.activeTo ? entity.activeTo.toISOString() : null,
     distance: entity.distance ?? null,
+    reviewReasons: entity.reviewReasons ?? [],
     geometry: buildGeometry(entity.areas),
     representativePoint: representativePoint(entity),
     boundingCircle: boundingCircle(entity),

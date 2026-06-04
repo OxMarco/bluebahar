@@ -42,6 +42,7 @@ export interface ParsedNotice {
   // yielded no geometry despite carrying coordinates. Flagged rows are
   // persisted but hidden from public getters for human curation.
   needsReview: boolean;
+  reviewReasons: string[];
 }
 
 export interface AdaptInput {
@@ -111,9 +112,12 @@ function referenceId(x: NoticeExtraction): string | null {
     : null;
 }
 
-function parseDate(iso: string | null): Date | null {
+function parseDate(iso: string | null, endOfDay = false): Date | null {
   if (!iso) return null;
-  const d = new Date(`${iso}T00:00:00.000Z`);
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(iso)
+    ? `${iso}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`
+    : iso;
+  const d = new Date(normalized);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -173,6 +177,14 @@ function noticeCoordCount(notes: string[]): number {
   return 0;
 }
 
+function uniqueReasons(reasons: Array<string | null | undefined>): string[] {
+  return [
+    ...new Set(
+      reasons.map((r) => r?.trim()).filter((r): r is string => Boolean(r)),
+    ),
+  ];
+}
+
 // Map the full mariner-parser result onto a single ParsedNotice row.
 export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
   const { source, extraction, featureCollection, enrichment, notes } = input;
@@ -192,7 +204,7 @@ export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
 
   const publishedAt = parseDate(extraction.date) ?? new Date();
   const activeFrom = parseDate(extraction.valid_from) ?? publishedAt;
-  const activeTo = parseDate(extraction.valid_to) ?? undefined;
+  const activeTo = parseDate(extraction.valid_to, true) ?? undefined;
 
   const title =
     extraction.title ||
@@ -211,12 +223,24 @@ export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
   const seriousWarnings = featureWarnings.filter(
     (w) => !w.startsWith('coastline_closure_fallback'),
   );
-  const scanned = notes.some((n) => n.includes('likely_scanned_pdf'));
+  const scannedReasons = notes.filter((n) => n.includes('likely_scanned_pdf'));
+  const genericDropReasons = notes.filter((n) =>
+    n.startsWith('generic_coord_outside_malta_bbox:'),
+  );
+  const usedGenericFallback = extraction.areas.some((a) =>
+    a.restrictions.some((r) => r.includes('generic extraction')),
+  );
   const suspiciousEmpty =
     areas.length === 0 &&
     noticeCoordCount(notes) > 0 &&
     extraction.document_type === 'new_restriction';
-  const needsReview = seriousWarnings.length > 0 || scanned || suspiciousEmpty;
+  const reviewReasons = uniqueReasons([
+    ...seriousWarnings,
+    ...scannedReasons,
+    ...genericDropReasons,
+    usedGenericFallback ? 'generic_extraction_verify_geometry' : null,
+    suspiciousEmpty ? 'restriction_with_coordinates_but_no_geometry' : null,
+  ]);
 
   return {
     kind: areas.length > 0 ? NoticeKind.AREA : NoticeKind.ADVISORY,
@@ -229,6 +253,7 @@ export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
     activeFrom,
     ...(activeTo ? { activeTo } : {}),
     areas,
-    needsReview,
+    needsReview: reviewReasons.length > 0,
+    reviewReasons,
   };
 }

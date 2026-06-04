@@ -28,6 +28,13 @@ const MONTHS: Record<string, string> = {
   november: '11',
   december: '12',
 };
+const MONTH_PATTERN = Object.keys(MONTHS)
+  .map((m) => `${m[0].toUpperCase()}${m.slice(1)}`)
+  .join('|');
+const WEEKDAY_PATTERN =
+  '(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\s+';
+const NOTICE_DATE_PATTERN = `(?:${WEEKDAY_PATTERN})?(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_PATTERN})\\s+(\\d{4})`;
+const NOTICE_TIME_ZONE = 'Europe/Malta';
 
 export function normalizeText(input: string): string {
   return input
@@ -118,6 +125,69 @@ export function isoDate(
   const month = MONTHS[monthName.toLowerCase()];
   if (!month) return null;
   return `${year}-${month}-${day.padStart(2, '0')}`;
+}
+
+function isoFromMatch(match: RegExpMatchArray, offset = 1): string | null {
+  return isoDate(match[offset], match[offset + 1], match[offset + 2]);
+}
+
+function parseClock(raw: string): { hour: number; minute: number } | null {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 1 || digits.length > 4) return null;
+  const hourPart = digits.length <= 2 ? digits : digits.slice(0, -2);
+  const minutePart = digits.length <= 2 ? '00' : digits.slice(-2);
+  const hour = Number(hourPart);
+  const minute = Number(minutePart);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return { hour, minute };
+}
+
+function timeZoneOffsetMinutes(timeZone: string, utcDate: Date): number {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(utcDate);
+  const values = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  const asUtc = Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second),
+  );
+  return (asUtc - utcDate.getTime()) / 60_000;
+}
+
+function localNoticeDateTimeToUtcIso(
+  dateIso: string,
+  clockRaw: string,
+): string | null {
+  const clock = parseClock(clockRaw);
+  if (!clock) return null;
+  const dateParts = dateIso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!dateParts) return null;
+  const year = Number(dateParts[1]);
+  const month = Number(dateParts[2]);
+  const day = Number(dateParts[3]);
+  const localAsUtc = Date.UTC(year, month - 1, day, clock.hour, clock.minute);
+  let offset = timeZoneOffsetMinutes(NOTICE_TIME_ZONE, new Date(localAsUtc));
+  let utcMs = localAsUtc - offset * 60_000;
+  const correctedOffset = timeZoneOffsetMinutes(
+    NOTICE_TIME_ZONE,
+    new Date(utcMs),
+  );
+  if (correctedOffset !== offset) {
+    offset = correctedOffset;
+    utcMs = localAsUtc - offset * 60_000;
+  }
+  return new Date(utcMs).toISOString();
 }
 
 // A single DMM coordinate ROW: "1A 35° 49'.213 014° 27'.724" (label optional).
@@ -225,9 +295,76 @@ export function extractMetadata(text: string): NoticeMeta {
 
 export function extractValidTo(text: string): string | null {
   const m = text.match(
-    /\b(?:until|extended until)\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?\s*(\d{1,2})(?:st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/i,
+    new RegExp(`\\b(?:until|extended until)\\s+${NOTICE_DATE_PATTERN}\\b`, 'i'),
   );
-  return m ? isoDate(m[1], m[2], m[3]) : null;
+  return m ? isoFromMatch(m) : null;
+}
+
+export function extractValidityWindow(
+  text: string,
+  publicationDate: string | null,
+): { validFrom: string | null; validTo: string | null } {
+  const dateTime = text.match(
+    new RegExp(
+      `\\bon\\s+${NOTICE_DATE_PATTERN}[\\s\\S]{0,260}?\\bbetween\\s+([0-9]{1,2}(?::|\\.)?[0-9]{2})\\s*(?:hours?)?\\s+(?:and|to)\\s+([0-9]{1,2}(?::|\\.)?[0-9]{2})\\s*(?:hours?)?`,
+      'i',
+    ),
+  );
+  if (dateTime) {
+    const date = isoFromMatch(dateTime);
+    const start = date ? localNoticeDateTimeToUtcIso(date, dateTime[4]) : null;
+    const end = date ? localNoticeDateTimeToUtcIso(date, dateTime[5]) : null;
+    if (start && end) return { validFrom: start, validTo: end };
+  }
+
+  const fromTo = text.match(
+    new RegExp(
+      `\\bfrom\\s+${NOTICE_DATE_PATTERN}\\s+(?:to|until)\\s+${NOTICE_DATE_PATTERN}\\b`,
+      'i',
+    ),
+  );
+  if (fromTo) {
+    return {
+      validFrom: isoFromMatch(fromTo),
+      validTo: isoFromMatch(fromTo, 4),
+    };
+  }
+
+  const betweenDates = text.match(
+    new RegExp(
+      `\\bbetween\\s+${NOTICE_DATE_PATTERN}\\s+and\\s+${NOTICE_DATE_PATTERN}\\b`,
+      'i',
+    ),
+  );
+  if (betweenDates) {
+    return {
+      validFrom: isoFromMatch(betweenDates),
+      validTo: isoFromMatch(betweenDates, 4),
+    };
+  }
+
+  const eventOnDate =
+    text.match(
+      new RegExp(
+        `\\b(?:will\\s+(?:carry\\s+out|take\\s+place|be\\s+held)|shall\\s+take\\s+place|is\\s+scheduled|are\\s+scheduled)[\\s\\S]{0,220}?\\bon\\s+${NOTICE_DATE_PATTERN}\\b`,
+        'i',
+      ),
+    ) ??
+    text.match(
+      new RegExp(
+        `\\b(?:live\\s+firing\\s+practice|exercise|works?)[\\s\\S]{0,220}?\\bon\\s+${NOTICE_DATE_PATTERN}\\b`,
+        'i',
+      ),
+    );
+  if (eventOnDate) {
+    const date = isoFromMatch(eventOnDate);
+    return { validFrom: date, validTo: date };
+  }
+
+  return {
+    validFrom: publicationDate,
+    validTo: extractValidTo(text),
+  };
 }
 
 // Classifier: a "new_restriction" that merely *cancels* an older notice must

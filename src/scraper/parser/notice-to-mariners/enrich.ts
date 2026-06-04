@@ -9,7 +9,6 @@
 // JSON schema.
 import OpenAI from 'openai';
 import { z } from 'zod';
-import { estimateCost } from './cost';
 import type { NoticeExtraction } from './types';
 
 const NOTICE_CATEGORIES = ['alert', 'info', 'other'] as const;
@@ -24,7 +23,6 @@ export type Enrichment = {
   validity: string; // prose active period, "" when none
   model: string;
   latency_ms: number;
-  cost_usd: number;
 };
 
 const ENRICH_SCHEMA = {
@@ -86,7 +84,7 @@ const SYSTEM = [
 const ENRICH_MODEL = (): string =>
   process.env.ENRICH_MODEL || process.env.OPENAI_MODEL || 'gpt-5.5';
 
-// Compact context: the rule-based extraction + the notice text (truncated for cost).
+// Compact context: the rule-based extraction + the notice text
 function buildContext(text: string, x: NoticeExtraction): string {
   return [
     `Title: ${x.title ?? ''}`,
@@ -100,7 +98,7 @@ function buildContext(text: string, x: NoticeExtraction): string {
     `Charts affected: ${x.charts_affected.join(', ') || 'none'}`,
     `Dates: from ${x.valid_from ?? '?'} to ${x.valid_to ?? '?'}`,
     '--- NOTICE TEXT ---',
-    text.slice(0, 12000),
+    text,
   ].join('\n');
 }
 
@@ -131,15 +129,9 @@ export async function enrichNotice(
   const jsonText = response.output_text;
   if (!jsonText) throw new Error('empty enrichment output');
   const e = ENRICH_OUTPUT_SCHEMA.parse(JSON.parse(jsonText));
-  const usage = (
-    response as { usage?: { input_tokens?: number; output_tokens?: number } }
-  ).usage;
-  const inTok = usage?.input_tokens ?? 0;
-  const outTok = usage?.output_tokens ?? 0;
   return {
     ...e,
     model,
     latency_ms: Date.now() - t0,
-    cost_usd: estimateCost(model, inTok, outTok),
   };
 }

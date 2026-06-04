@@ -4,8 +4,8 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { createHash } from 'node:crypto';
 import { LessThan, Repository } from 'typeorm';
-import * as Sentry from '@sentry/nestjs';
 import { NoticeToMariners } from './entities/notice-to-mariners.entity';
 import { Logs } from './entities/logs.entity';
 import { listNoticeLinks } from './parser/notice-to-mariners';
@@ -36,76 +36,63 @@ export class ScraperService implements OnApplicationBootstrap {
     try {
       await this.scrapeNoticeToMariners();
     } catch (err) {
-      // scrapeNoticeToMariners already forwards to Sentry; just log here so
+      // scrapeNoticeToMariners is wrapped by @sentry/nestjs; just log here so
       // bootstrap output stays informative without double-capturing.
       this.logger.error('Bootstrap scrape notice-to-mariners failed', err);
     }
   }
 
-  // @nestjs/schedule logs unhandled cron errors but does not propagate them to
-  // Sentry's global filter, so capture in-line before rethrowing.
+  // @sentry/nestjs instruments @Cron handlers and captures thrown failures.
   @Cron(CronExpression.EVERY_12_HOURS)
   async scrapeNoticeToMariners() {
-    try {
-      const links = await listNoticeLinks();
+    const links = await listNoticeLinks();
 
-      const stored = await this.ntmRepo.find({ select: { source: true } });
-      const storedUrls = new Set(stored.map((n) => n.source));
+    const stored = await this.ntmRepo.find({ select: { source: true } });
+    const storedUrls = new Set(stored.map((n) => n.source));
 
-      const inFlight = await this.queue.getJobs([
-        'waiting',
-        'active',
-        'delayed',
-      ]);
-      const inFlightUrls = new Set(
-        inFlight
-          .filter((j) => j.name === 'notice-to-mariners')
-          .map((j) => (j.data as { url: string }).url),
+    const inFlight = await this.queue.getJobs(['waiting', 'active', 'delayed']);
+    const inFlightUrls = new Set(
+      inFlight
+        .filter((j) => j.name === 'notice-to-mariners')
+        .map((j) => (j.data as { url: string }).url),
+    );
+
+    const next = links
+      .filter((l) => !storedUrls.has(l.url) && !inFlightUrls.has(l.url))
+      .slice(0, this.noticeBatchSize);
+    if (next.length === 0) {
+      await this.recordScrapeLog(
+        `No new notices to enqueue (${links.length} active, ${storedUrls.size} stored, ${inFlightUrls.size} in flight)`,
       );
-
-      const next = links
-        .filter((l) => !storedUrls.has(l.url) && !inFlightUrls.has(l.url))
-        .slice(0, this.noticeBatchSize);
-      if (next.length === 0) {
-        await this.recordScrapeLog(
-          `No new notices to enqueue (${links.length} active, ${storedUrls.size} stored, ${inFlightUrls.size} in flight)`,
-        );
-        return { message: 'No new notices', enqueued: 0 };
-      }
-
-      for (const link of next) {
-        await this.queue.add('notice-to-mariners', { url: link.url });
-      }
-
-      await this.recordScrapeLog(`Enqueued ${next.length} notice(s)`);
-      return { message: 'Enqueued', enqueued: next.length };
-    } catch (err) {
-      Sentry.captureException(err, {
-        tags: { scraper: 'notice-to-mariners' },
-      });
-      throw err;
+      return { message: 'No new notices', enqueued: 0 };
     }
+
+    for (const link of next) {
+      // Deterministic jobId derived from the URL: BullMQ rejects a second job
+      // with an id already present, so a duplicate enqueue (overlapping cron
+      // run, retry, clock skew) can't queue the same notice twice. Belt-and-
+      // braces on top of the storedUrls / inFlightUrls filtering above.
+      const jobId = `ntm:${createHash('sha256').update(link.url).digest('hex')}`;
+      await this.queue.add('notice-to-mariners', { url: link.url }, { jobId });
+    }
+
+    await this.recordScrapeLog(`Enqueued ${next.length} notice(s)`);
+    return { message: 'Enqueued', enqueued: next.length };
   }
 
   // Audit logs are an unbounded-growth table; trim entries older than the
-  // retention window once a day so it stays bounded. Same in-line Sentry
-  // capture rationale as scrapeNoticeToMariners.
+  // retention window once a day so it stays bounded.
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async pruneOldLogs() {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - ScraperService.LOG_RETENTION_DAYS);
-    try {
-      const result = await this.logsRepository.delete({
-        createdAt: LessThan(cutoff),
-      });
-      this.logger.log(
-        `Pruned ${result.affected ?? 0} log(s) older than ${ScraperService.LOG_RETENTION_DAYS} days`,
-      );
-      return { deleted: result.affected ?? 0 };
-    } catch (err) {
-      Sentry.captureException(err, { tags: { scraper: 'prune-logs' } });
-      throw err;
-    }
+    const result = await this.logsRepository.delete({
+      createdAt: LessThan(cutoff),
+    });
+    this.logger.log(
+      `Pruned ${result.affected ?? 0} log(s) older than ${ScraperService.LOG_RETENTION_DAYS} days`,
+    );
+    return { deleted: result.affected ?? 0 };
   }
 
   // Scrape-cycle outcomes go to both the application logger (stdout / log

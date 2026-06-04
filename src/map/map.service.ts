@@ -26,8 +26,8 @@ export class MapService {
     needsReview = false,
   ): Promise<PaginatedNoticesDto> {
     const now = new Date();
-    // needsReview hides notices whose LLM-extracted coordinates failed
-    // geo-sanity checks; they're persisted for manual triage but not surfaced.
+    // needsReview hides notices whose deterministic extraction failed sanity
+    // checks; they're persisted for manual triage but not surfaced publicly.
     const baseWhere = {
       needsReview,
       ...(query.kind ? { kind: query.kind } : {}),

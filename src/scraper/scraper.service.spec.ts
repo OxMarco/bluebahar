@@ -1,7 +1,7 @@
-import * as Sentry from '@sentry/nestjs';
 import type { ConfigService } from '@nestjs/config';
 import type { Job, Queue } from 'bullmq';
 import type { Repository } from 'typeorm';
+import { createHash } from 'node:crypto';
 import { ScraperService } from './scraper.service';
 import { NoticeToMariners } from './entities/notice-to-mariners.entity';
 import { listNoticeLinks, type PdfLink } from './parser/notice-to-mariners';
@@ -11,12 +11,7 @@ jest.mock('./parser/notice-to-mariners', () => ({
   listNoticeLinks: jest.fn(),
 }));
 
-jest.mock('@sentry/nestjs', () => ({
-  captureException: jest.fn(),
-}));
-
 const listNoticeLinksMock = jest.mocked(listNoticeLinks);
-const captureExceptionMock = jest.mocked(Sentry.captureException);
 
 function link(url: string): PdfLink {
   return {
@@ -24,6 +19,11 @@ function link(url: string): PdfLink {
     title: url,
     source: 'https://www.transport.gov.mt/maritime/notices',
   };
+}
+
+// Mirrors the deterministic jobId the service derives from each notice URL.
+function jobId(url: string): string {
+  return `ntm:${createHash('sha256').update(url).digest('hex')}`;
 }
 
 describe('ScraperService', () => {
@@ -63,7 +63,6 @@ describe('ScraperService', () => {
     );
 
     listNoticeLinksMock.mockReset();
-    captureExceptionMock.mockReset();
   });
 
   it('enqueues only unseen, non-in-flight notices up to the configured batch size', async () => {
@@ -90,12 +89,18 @@ describe('ScraperService', () => {
     });
 
     expect(add).toHaveBeenCalledTimes(2);
-    expect(add).toHaveBeenNthCalledWith(1, 'notice-to-mariners', {
-      url: 'https://example.com/new-1.pdf',
-    });
-    expect(add).toHaveBeenNthCalledWith(2, 'notice-to-mariners', {
-      url: 'https://example.com/new-2.pdf',
-    });
+    expect(add).toHaveBeenNthCalledWith(
+      1,
+      'notice-to-mariners',
+      { url: 'https://example.com/new-1.pdf' },
+      { jobId: jobId('https://example.com/new-1.pdf') },
+    );
+    expect(add).toHaveBeenNthCalledWith(
+      2,
+      'notice-to-mariners',
+      { url: 'https://example.com/new-2.pdf' },
+      { jobId: jobId('https://example.com/new-2.pdf') },
+    );
   });
 
   it('does not enqueue when every discovered notice is already stored', async () => {
@@ -114,14 +119,11 @@ describe('ScraperService', () => {
     expect(add).not.toHaveBeenCalled();
   });
 
-  it('reports scrape failures to Sentry before rethrowing', async () => {
+  it('rethrows scrape failures for the Sentry cron instrumentation', async () => {
     const error = new Error('upstream unavailable');
     listNoticeLinksMock.mockRejectedValue(error);
 
     await expect(service.scrapeNoticeToMariners()).rejects.toThrow(error);
-    expect(captureExceptionMock).toHaveBeenCalledWith(error, {
-      tags: { scraper: 'notice-to-mariners' },
-    });
   });
 
   it('prunes logs older than the 14-day retention window', async () => {
@@ -139,13 +141,10 @@ describe('ScraperService', () => {
     );
   });
 
-  it('reports log-prune failures to Sentry before rethrowing', async () => {
+  it('rethrows log-prune failures for the Sentry cron instrumentation', async () => {
     const error = new Error('db unavailable');
     logsDelete.mockRejectedValue(error);
 
     await expect(service.pruneOldLogs()).rejects.toThrow(error);
-    expect(captureExceptionMock).toHaveBeenCalledWith(error, {
-      tags: { scraper: 'prune-logs' },
-    });
   });
 });

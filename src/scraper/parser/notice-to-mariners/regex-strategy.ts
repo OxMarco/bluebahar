@@ -7,7 +7,7 @@ import {
   extractCoordinates,
   classifyDocumentType,
   inferHazardType,
-  extractValidTo,
+  extractValidityWindow,
   parseDmm,
   inBbox,
   resolveLabels,
@@ -213,27 +213,37 @@ type PosCoord = {
   label: string | null;
   lat: number;
   lon: number;
+  raw: string;
 };
 
 const GEN_ROW =
   /(?:\b([A-Z]\d?|\d{1,3}[A-Z])\.?\s+)?(\d{2,3})\s*°\s*(\d{2})\s*['′]\s*\.?\s*(\d{1,3})\s+(0?\d{2,3})\s*°\s*(\d{2})\s*['′]\s*\.?\s*(\d{1,3})/g;
 
-function scanCoords(text: string): PosCoord[] {
-  const out: PosCoord[] = [];
+function scanCoords(text: string): {
+  coords: PosCoord[];
+  outsideBbox: PosCoord[];
+} {
+  const coords: PosCoord[] = [];
+  const outsideBbox: PosCoord[] = [];
   for (const m of text.matchAll(GEN_ROW)) {
     const lat = parseDmm(m[2], m[3], m[4]);
     const lon = parseDmm(m[5], m[6], m[7]);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !inBbox({ lat, lon }))
-      continue;
-    out.push({
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const coord = {
       idx: m.index,
       end: m.index + m[0].length,
       label: m[1] ?? null,
       lat,
       lon,
-    });
+      raw: m[0].trim(),
+    };
+    if (!inBbox({ lat, lon })) {
+      outsideBbox.push(coord);
+      continue;
+    }
+    coords.push(coord);
   }
-  return out;
+  return { coords, outsideBbox };
 }
 
 // Nearest preceding "title" line (the area/notice subject), skipping table headers.
@@ -257,8 +267,15 @@ function genericAreas(
   text: string,
   notice: string,
   title: string | null,
+  notes: string[],
 ): Area[] {
-  const coords = scanCoords(text);
+  const scan = scanCoords(text);
+  const coords = scan.coords;
+  for (const dropped of scan.outsideBbox) {
+    notes.push(
+      `generic_coord_outside_malta_bbox:${dropped.label ?? '?'}:${dropped.raw}`,
+    );
+  }
   if (!coords.length) return [];
   const hazard = inferHazardType(text);
 
@@ -358,6 +375,7 @@ function genericAreas(
 
   // C) Catch-all: cluster coordinate rows into areas, splitting where descriptive
   //    prose sits between two rows. Flagged for review.
+  notes.push('generic_extraction_verify_geometry');
   const groups: PosCoord[][] = [];
   let cur: PosCoord[] = [];
   for (let i = 0; i < coords.length; i++) {
@@ -416,6 +434,7 @@ function buildAreas(
   notice: string,
   docType: string,
   title: string | null,
+  notes: string[],
 ): Area[] {
   if (docType === 'chart_correction')
     return chartCorrectionAreas(text, coords, notice);
@@ -452,7 +471,7 @@ function buildAreas(
   const swim = swimmerAreas(text, byLabel, notice);
   if (swim.length) return swim;
 
-  const generic = genericAreas(text, notice, title);
+  const generic = genericAreas(text, notice, title, notes);
   if (generic.length) return generic;
 
   return []; // genuinely no plottable coordinates
@@ -473,6 +492,11 @@ export function runRegex(
   const byLabel = new Map(coords.map((c) => [c.label, c]));
   const docType = classifyDocumentType(text);
   const noticeId = meta.notice_no ?? 'notice';
+  const validity = extractValidityWindow(text, meta.date);
+
+  // A near-empty text layer means the PDF is scanned images — regex can't see
+  // anything. Flag it so the caller can surface a manual-review hint.
+  const notes = [`coords:${coords.length}`];
   const areas = buildAreas(
     text,
     coords,
@@ -480,11 +504,9 @@ export function runRegex(
     noticeId,
     docType,
     meta.title,
+    notes,
   );
 
-  // A near-empty text layer means the PDF is scanned images — regex can't see
-  // anything. Flag it so the caller can surface a manual-review hint.
-  const notes = [`coords:${coords.length}`];
   const nonWs = text.replace(/\s/g, '').length;
   if (!coords.length && nonWs / Math.max(pages, 1) < 40) {
     notes.push('likely_scanned_pdf:empty_text_layer — needs OCR/manual review');
@@ -497,14 +519,14 @@ export function runRegex(
     date: meta.date,
     title: meta.title,
     document_type: docType,
-    valid_from: meta.date,
-    valid_to: extractValidTo(text),
+    valid_from: validity.validFrom,
+    valid_to: validity.validTo,
     referenced_notices: meta.referenced_notices,
     charts_affected: meta.charts_affected,
     areas,
   };
   return {
     extraction,
-    meta: { latency_ms: Date.now() - t0, cost_usd: 0, model: null, notes },
+    meta: { latency_ms: Date.now() - t0, model: null, notes },
   };
 }

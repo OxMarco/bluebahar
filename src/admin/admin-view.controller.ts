@@ -23,6 +23,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { Response } from 'express';
 import { timingSafeEqual } from 'node:crypto';
+import * as Sentry from '@sentry/nestjs';
 import { AdminService } from './admin.service';
 import { AdminJwtGuard, ADMIN_SESSION_COOKIE } from './admin-jwt.guard';
 import { LoginDto } from './dto/login.dto';
@@ -44,6 +45,11 @@ class AdminCreateNoticeExceptionFilter implements ExceptionFilter {
       exception instanceof HttpException
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
+    if (!(exception instanceof HttpException) || status >= 500) {
+      Sentry.captureException(exception, {
+        tags: { area: 'admin', action: 'create-notice' },
+      });
+    }
 
     return response.status(status).render('admin/new', {
       page: 'new',
@@ -168,7 +174,7 @@ export class AdminViewController {
     const page = await this.adminService.viewNoticesInReview(query);
     return {
       page: 'review',
-      title: 'Review queue (AI-flagged)',
+      title: 'Review queue',
       notices: page.items,
       pagination: paginationMeta(page, query),
     };

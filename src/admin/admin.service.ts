@@ -68,12 +68,12 @@ export class AdminService {
     return this.mapService.getNotices(query, true);
   }
 
-  // Clears the geo-sanity review flag, making the notice public. This is the
-  // LLM-extraction triage queue (needsReview) and is independent of user
-  // reports — use dismissReports to deal with those.
+  // Clears the extraction review flag, making the notice public. This is
+  // independent of user reports — use dismissReports to deal with those.
   async approveNtM(id: string) {
     const notice = await this.requireNotice(id);
     notice.needsReview = false;
+    notice.reviewReasons = [];
     await this.noticeRepository.save(notice);
   }
 

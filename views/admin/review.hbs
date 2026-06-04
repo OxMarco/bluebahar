@@ -10,7 +10,7 @@
     <main class="flex-1 p-6 md:p-10">
       <header class="mb-6">
         <h1 class="text-2xl font-display font-semibold">{{title}}</h1>
-        <p class="text-sm text-ink/60 mt-1">Notices the LLM extraction flagged for geo-sanity review. Click a row to inspect the area. Approve to publish, reject to delete.</p>
+        <p class="text-sm text-ink/60 mt-1">Notices the extractor flagged for manual review. Click a row to inspect the area. Approve to publish, reject to delete.</p>
       </header>
 
       {{#if notices.length}}
@@ -32,6 +32,13 @@
                     <td class="px-4 py-3 align-top">
                       <div class="font-medium notice-title">{{this.title}}</div>
                       <div class="text-xs text-ink/55 mt-0.5 line-clamp-2">{{this.description}}</div>
+                      {{#if this.reviewReasons.length}}
+                        <ul class="mt-2 space-y-1 text-[11px] text-warning">
+                          {{#each this.reviewReasons}}
+                            <li class="break-words">{{this}}</li>
+                          {{/each}}
+                        </ul>
+                      {{/if}}
                       {{#if this.locationLabel}}
                         <div class="text-[11px] text-ink/45 mt-1">{{this.locationLabel}}</div>
                       {{/if}}
