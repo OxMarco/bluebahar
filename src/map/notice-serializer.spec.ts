@@ -153,7 +153,7 @@ describe('toNoticeDto', () => {
       });
     });
 
-    it('walks across parts to find the first coordinate', () => {
+    it('anchors on the line, skipping earlier empty parts', () => {
       const dto = toNoticeDto(
         makeNotice([
           { label: 'Empty', geometryType: 'line', points: [] },
@@ -168,10 +168,39 @@ describe('toNoticeDto', () => {
         ]),
       );
 
-      expect(dto.representativePoint).toEqual({
-        latitude: 35.91,
-        longitude: 14.51,
-      });
+      // A point along the cable (within its bounds), not a dropped/null pin.
+      const p = dto.representativePoint!;
+      expect(p).not.toBeNull();
+      expect(p.latitude).toBeGreaterThanOrEqual(35.91);
+      expect(p.latitude).toBeLessThanOrEqual(35.92);
+      expect(p.longitude).toBeGreaterThanOrEqual(14.51);
+      expect(p.longitude).toBeLessThanOrEqual(14.52);
+    });
+
+    it('anchors inside a polygon rather than on a corner vertex', () => {
+      // A 0.1°-square firing range. The old rule pinned the first vertex
+      // (a corner); the anchor must now sit strictly inside the square.
+      const dto = toNoticeDto(
+        makeNotice([
+          {
+            label: 'Firing range',
+            geometryType: 'polygon',
+            points: [
+              { lat: 35.9, long: 14.5 },
+              { lat: 35.9, long: 14.6 },
+              { lat: 36.0, long: 14.6 },
+              { lat: 36.0, long: 14.5 },
+            ],
+          },
+        ]),
+      );
+
+      const p = dto.representativePoint!;
+      expect(p).not.toBeNull();
+      expect(p.latitude).toBeGreaterThan(35.9);
+      expect(p.latitude).toBeLessThan(36.0);
+      expect(p.longitude).toBeGreaterThan(14.5);
+      expect(p.longitude).toBeLessThan(14.6);
     });
 
     it('returns null when no part has a usable point', () => {

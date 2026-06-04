@@ -103,5 +103,18 @@ export class ScraperProcessor extends WorkerHost {
     if (flagged.length === 0) {
       this.logger.log(`Stored ${parsed.length} notice(s) from ${url}`);
     }
+
+    // Public (non-flagged) notices with no geometry get served to the app with
+    // geometry: null, so they drop no map pin and the mariner can't tap them.
+    // Often legitimate (a notice that names no location), but worth counting so
+    // we can tell genuine location-less notices from extraction gaps.
+    const noGeometry = parsed.filter(
+      (p) => !p.needsReview && p.areas.length === 0,
+    );
+    if (noGeometry.length > 0) {
+      this.logger.warn(
+        `${noGeometry.length}/${parsed.length} notice(s) from ${url} stored without geometry (no map pin)`,
+      );
+    }
   }
 }
