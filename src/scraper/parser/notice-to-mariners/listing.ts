@@ -2,7 +2,7 @@
 // Independent of the extraction pipeline — this only produces links.
 
 import * as cheerio from 'cheerio';
-import { fetchHtml } from '../../../common/utils/http';
+import { fetchText } from '../../../common/utils/http';
 
 export interface PdfLink {
   url: string;
@@ -110,7 +110,7 @@ function extractPdfLinks(
 }
 
 async function fetchSource(source: string): Promise<PdfLink[]> {
-  const html = await fetchHtml(source);
+  const html = await fetchText(source);
   return extractPdfLinks(html, source);
 }
 

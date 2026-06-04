@@ -9,9 +9,7 @@ type RawProperties = Record<string, unknown>;
 // dedup), so adapters only produce the rest of the shape.
 type NormalizedFeatureDraft = Omit<NormalizedFeatureProperties, 'id'>;
 
-export type FeatureAdapter = (
-  raw: RawProperties,
-) => NormalizedFeatureDraft | null;
+type FeatureAdapter = (raw: RawProperties) => NormalizedFeatureDraft | null;
 
 // Returns null to drop the feature entirely (no usable title). The catalog
 // will filter these out.
@@ -19,7 +17,7 @@ export const ADAPTERS: Record<string, FeatureAdapter> = {
   'diving-sites': adaptDivingSite,
   'anchoring-and-mooring-hotspots': adaptAnchoringHotspot,
   'bunkering-areas': adaptBunkeringArea,
-  beaches: adaptWaterQualitySite,
+  beaches: adaptBeach,
 };
 
 function adaptDivingSite(raw: RawProperties): NormalizedFeatureDraft | null {
@@ -127,9 +125,7 @@ function adaptBunkeringArea(raw: RawProperties): NormalizedFeatureDraft | null {
 // Environmental Health Directorate bathing-water sites. Field names come
 // straight off the ArcGIS feature layer (Name_ENG, Blue_Flag_OR_Beach_of_Quality,
 // Bathing_Water_Profile, …) — see data/datasets/beaches.geojson.
-function adaptWaterQualitySite(
-  raw: RawProperties,
-): NormalizedFeatureDraft | null {
+function adaptBeach(raw: RawProperties): NormalizedFeatureDraft | null {
   const englishName = str(raw.Name_ENG);
   const malteseName = str(raw.Name_MT);
   const siteCode = str(raw.Site_Code);

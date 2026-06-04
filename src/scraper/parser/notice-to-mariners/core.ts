@@ -1,13 +1,11 @@
 // Shared building blocks for the deterministic text reader, vendored from the
 // mariner-parser project (bench/core.ts). Coordinates, metadata, dates and the
 // document-type classifier all come from here — no LLM touches the numbers.
-import fs from 'node:fs/promises';
 import path from 'node:path';
-import { LRUCache } from 'lru-cache';
 import { PDFParse } from 'pdf-parse';
 import type { DocumentType, ResolvedPoint } from './types';
 
-export const MALTA_BBOX = {
+const MALTA_BBOX = {
   minLat: 35.6,
   maxLat: 36.25,
   minLon: 14.0,
@@ -36,7 +34,7 @@ const WEEKDAY_PATTERN =
 const NOTICE_DATE_PATTERN = `(?:${WEEKDAY_PATTERN})?(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH_PATTERN})\\s+(\\d{4})`;
 const NOTICE_TIME_ZONE = 'Europe/Malta';
 
-export function normalizeText(input: string): string {
+function normalizeText(input: string): string {
   return input
     .normalize('NFKC')
     .replace(/[‘’`´]/g, "'")
@@ -49,20 +47,8 @@ export function normalizeText(input: string): string {
 
 export type PdfText = { text: string; pages: number };
 
-function cacheSizeEnv(value: string | undefined, fallback: number): number {
-  const n = Number(value);
-  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
-}
-
-const PDF_TEXT_CACHE_SIZE = cacheSizeEnv(process.env.PDF_TEXT_CACHE_SIZE, 64);
-const pdfTextCache =
-  PDF_TEXT_CACHE_SIZE > 0
-    ? new LRUCache<string, PdfText>({ max: PDF_TEXT_CACHE_SIZE })
-    : null;
-const pdfTextInflight = new Map<string, Promise<PdfText>>();
-
 // Read text out of a raw PDF buffer (the shape the scraper has after fetching a
-// URL). Not cached — each scrape job streams a fresh buffer.
+// URL). Each scrape job streams a fresh buffer.
 export async function readPdfTextFromBuffer(
   buffer: Buffer | Uint8Array,
 ): Promise<PdfText> {
@@ -80,48 +66,12 @@ export async function readPdfTextFromBuffer(
   }
 }
 
-async function pdfCacheKey(filePath: string): Promise<string> {
-  const stat = await fs.stat(filePath);
-  return `${path.resolve(filePath)}:${stat.size}:${stat.mtimeMs}`;
-}
-
-async function parsePdfText(filePath: string): Promise<PdfText> {
-  const buffer = await fs.readFile(filePath);
-  return readPdfTextFromBuffer(buffer);
-}
-
-// File-based reader (used by offline tests/fixtures). Coalesces concurrent
-// reads of the same file and caches the parsed text by path+size+mtime.
-export async function readPdfText(filePath: string): Promise<PdfText> {
-  const key = await pdfCacheKey(filePath);
-  const cached = pdfTextCache?.get(key);
-  if (cached) return cached;
-
-  const inflight = pdfTextInflight.get(key);
-  if (inflight) return inflight;
-
-  const promise = parsePdfText(filePath)
-    .then((value) => {
-      pdfTextCache?.set(key, value);
-      return value;
-    })
-    .finally(() => {
-      pdfTextInflight.delete(key);
-    });
-  pdfTextInflight.set(key, promise);
-  return promise;
-}
-
 export function parseDmm(deg: string, min: string, frac: string): number {
   const minutes = Number(`${min}.${frac.padEnd(3, '0')}`);
   return Number((Number(deg) + minutes / 60).toFixed(8));
 }
 
-export function isoDate(
-  day: string,
-  monthName: string,
-  year: string,
-): string | null {
+function isoDate(day: string, monthName: string, year: string): string | null {
   const month = MONTHS[monthName.toLowerCase()];
   if (!month) return null;
   return `${year}-${month}-${day.padStart(2, '0')}`;
@@ -293,7 +243,7 @@ export function extractMetadata(text: string): NoticeMeta {
   };
 }
 
-export function extractValidTo(text: string): string | null {
+function extractValidTo(text: string): string | null {
   const m = text.match(
     new RegExp(`\\b(?:until|extended until)\\s+${NOTICE_DATE_PATTERN}\\b`, 'i'),
   );

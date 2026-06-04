@@ -6,6 +6,7 @@ import { extractNoticeFromBuffer } from './extract';
 import { runRegex } from './regex-strategy';
 import { buildFeatureCollection } from './geometry';
 import { adaptToParsedNotice } from './adapter';
+import type { Area, NoticeExtraction } from './types';
 
 // PDF text is captured from the real Transport Malta notices (see __fixtures__).
 // We drive the substantive pipeline (regex -> GeoJSON -> ParsedNotice) directly
@@ -42,6 +43,49 @@ function pipelineText(
   });
 }
 
+function areaNotice(area: Area) {
+  const extraction: NoticeExtraction = {
+    source_file: 'synthetic.pdf',
+    notice_no: '99',
+    notice_year: '2026',
+    date: '2026-06-03',
+    title: 'Synthetic restriction',
+    document_type: 'new_restriction',
+    valid_from: '2026-06-03',
+    valid_to: null,
+    referenced_notices: [],
+    charts_affected: [],
+    areas: [area],
+  };
+  return adaptToParsedNotice({
+    source: 'file://synthetic.pdf',
+    extraction,
+    featureCollection: buildFeatureCollection(extraction),
+    enrichment: null,
+    notes: [`coords:${area.points.length}`],
+  });
+}
+
+function polygonArea(
+  areaId: string,
+  points: Array<{ lat: number; lon: number }>,
+): Area {
+  return {
+    area_id: areaId,
+    name: 'Synthetic area',
+    chart: null,
+    zone_color: null,
+    hazard_type: 'restricted_area',
+    operation: 'new',
+    geometry_kind: 'polygon',
+    point_labels: points.map((_, i) => `P${i + 1}`),
+    points: points.map((p, i) => ({ label: `P${i + 1}`, ...p })),
+    radius_nm: null,
+    buffer_m: null,
+    restrictions: [],
+  };
+}
+
 describe('regex -> geometry -> adapter (real notice text)', () => {
   it('extracts coastline-closed restriction polygons from an area notice', () => {
     const notice = pipeline('Not_29_of_2025');
@@ -61,6 +105,7 @@ describe('regex -> geometry -> adapter (real notice text)', () => {
     expect(first.lat).toBeLessThan(36.25);
     expect(first.long).toBeGreaterThan(14.0);
     expect(first.long).toBeLessThan(14.8);
+    expect(notice.needsReview).toBe(false);
   });
 
   it('realises a firing-practice sector as a polygon', () => {
@@ -124,6 +169,36 @@ D 35° 57'.290 014° 31'.190
         r.startsWith('generic_coord_outside_malta_bbox:'),
       ),
     ).toBe(true);
+  });
+
+  it('flags an area realised entirely on land for manual review', () => {
+    const notice = areaNotice(
+      polygonArea('land-area', [
+        { lat: 35.89, lon: 14.42 },
+        { lat: 35.89, lon: 14.43 },
+        { lat: 35.9, lon: 14.43 },
+      ]),
+    );
+
+    expect(notice.needsReview).toBe(true);
+    expect(notice.reviewReasons).toContain(
+      'geometry_entirely_on_land:land-area',
+    );
+  });
+
+  it('flags an area outside Maltese national waters for manual review', () => {
+    const notice = areaNotice(
+      polygonArea('outside-waters', [
+        { lat: 35.9, lon: 15.3 },
+        { lat: 35.9, lon: 15.31 },
+        { lat: 35.91, lon: 15.31 },
+      ]),
+    );
+
+    expect(notice.needsReview).toBe(true);
+    expect(notice.reviewReasons).toContain(
+      'geometry_outside_maltese_waters:outside-waters',
+    );
   });
 });
 

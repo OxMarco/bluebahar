@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import { createHash } from 'node:crypto';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
 import { NoticeKind } from '../scraper/notice-kind';
+import { CacheManifestDto } from './dto/cache-manifest.dto';
 import { GetNoticesDto } from './dto/get-notices.dto';
 import { NoticeMetricsDto } from './dto/notice-metrics.dto';
 import { PaginatedNoticesDto } from './dto/paginated-notices.dto';
@@ -106,6 +108,43 @@ export class MapService {
     };
   }
 
+  // Cheap change-detection summary. Notices are append-only with a review→public
+  // flip and hard deletes — never content edits — so the public set's COUNT plus
+  // MAX(createdAt) moves on every change the app can see: a notice approved into
+  // public view (count up), a manual add (count + newest createdAt up), or a
+  // delete (count down). Expiry is left out by design — it's deterministic, so
+  // the app drops lapsed notices itself using `nextExpiryAt` rather than polling.
+  async getManifest(): Promise<CacheManifestDto> {
+    const now = new Date();
+    const [summary, expiry] = await Promise.all([
+      this.noticeRepository
+        .createQueryBuilder('n')
+        .select('COUNT(*)', 'count')
+        .addSelect('MAX(n.createdAt)', 'maxCreatedAt')
+        .where('n.needsReview = :needsReview', { needsReview: false })
+        .getRawOne<{ count: string; maxCreatedAt: Date | string | null }>(),
+      this.noticeRepository
+        .createQueryBuilder('n')
+        .select('MIN(n.activeTo)', 'nextExpiry')
+        .where('n.needsReview = :needsReview', { needsReview: false })
+        .andWhere('n.activeFrom <= :now', { now })
+        .andWhere('n.activeTo > :now', { now })
+        .getRawOne<{ nextExpiry: Date | string | null }>(),
+    ]);
+
+    const noticesRev = createHash('sha256')
+      .update(`${summary?.count ?? '0'}:${toIso(summary?.maxCreatedAt) ?? '0'}`)
+      .digest('hex');
+
+    return {
+      datasets: { rev: this.datasets.revision() },
+      notices: {
+        rev: noticesRev,
+        nextExpiryAt: toIso(expiry?.nextExpiry),
+      },
+    };
+  }
+
   listDatasets(): DatasetMetadata[] {
     return this.datasets.list();
   }
@@ -139,4 +178,12 @@ export class MapService {
         error: `notice to mariners with id ${id} not found`,
       });
   }
+}
+
+// Raw aggregate columns come back as a Date (pg driver) or string depending on
+// the path; normalize both to an ISO string, or null when absent/invalid.
+function toIso(value: Date | string | null | undefined): string | null {
+  if (value == null) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }

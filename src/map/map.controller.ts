@@ -34,6 +34,14 @@ export class MapController {
     return this.mapService.getNoticeMetrics();
   }
 
+  // Tiny change-detection token the app polls on focus/reconnect to decide
+  // whether its cached datasets / notices are stale, instead of re-fetching
+  // them speculatively. See CacheManifestDto.
+  @Get('manifest')
+  getManifest() {
+    return this.mapService.getManifest();
+  }
+
   @Get('datasets')
   listDatasets() {
     return this.mapService.listDatasets();

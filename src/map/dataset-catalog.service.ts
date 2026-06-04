@@ -136,6 +136,17 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  // A single opaque token that changes whenever any served layer's content
+  // changes (sha256), a layer is added, or one drops out at boot. The app polls
+  // this via the cache manifest and re-fetches the dataset list (which carries
+  // the per-layer sha256s its own eviction keys off) only when it moves.
+  revision(): string {
+    const parts = [...this.entries.values()]
+      .map((e) => `${e.metadata.key}:${e.metadata.sha256}`)
+      .sort();
+    return createHash('sha256').update(parts.join('\n')).digest('hex');
+  }
+
   status(): DatasetCatalogStatus {
     return {
       configured: DATASETS.length,

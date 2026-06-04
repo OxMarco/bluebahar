@@ -41,7 +41,7 @@ export class NoticeToMariners {
   @Column({ default: '' })
   subKey!: string;
 
-  // Required for kind='facility', optional context for kind='area', absent for 'advisory'.
+  // Optional context for kind='area', absent for 'advisory'.
   @Column({ nullable: true })
   locationLabel?: string;
 

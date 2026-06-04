@@ -38,7 +38,7 @@ describe('toNoticeDto', () => {
           },
         ],
         {
-          kind: NoticeKind.FACILITY,
+          kind: NoticeKind.ADVISORY,
           locationLabel: 'Kalkara Harbour',
           activeTo: new Date('2026-01-04T00:00:00.000Z'),
           distance: 300,

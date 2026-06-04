@@ -1,8 +1,8 @@
 import { distance } from '@turf/distance';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
 
-export type GeoCoordinate = { latitude: number; longitude: number };
-export type GeoBoundingCircle = { center: GeoCoordinate; radiusMetres: number };
+type GeoCoordinate = { latitude: number; longitude: number };
+type GeoBoundingCircle = { center: GeoCoordinate; radiusMetres: number };
 
 function isFinitePoint(p: { lat: number; long: number }): boolean {
   return Number.isFinite(p.lat) && Number.isFinite(p.long);

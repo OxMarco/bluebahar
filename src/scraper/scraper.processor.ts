@@ -11,8 +11,7 @@ import { Logs } from './entities/logs.entity';
 import { extractNoticeFromPdf } from './parser/notice-to-mariners';
 import { LogType } from './log-type';
 
-export type NoticeJobData = { url: string };
-export type JobData = NoticeJobData;
+type NoticeJobData = { url: string };
 
 @Processor('scraper', { concurrency: 1 })
 export class ScraperProcessor extends WorkerHost {
@@ -32,7 +31,7 @@ export class ScraperProcessor extends WorkerHost {
     });
   }
 
-  async process(job: Job<JobData>): Promise<void> {
+  async process(job: Job<NoticeJobData>): Promise<void> {
     switch (job.name) {
       case 'notice-to-mariners':
         await this.handleNoticeToMariners(job);

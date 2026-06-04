@@ -24,11 +24,16 @@ const DATA_DIR = path.join(__dirname, 'data');
 const COASTLINE = path.join(DATA_DIR, 'malta-coastline.geojson');
 const WATERS = path.join(DATA_DIR, 'maltese-waters-contour.geojson');
 const DEFAULT_FILE = fs.existsSync(COASTLINE) ? COASTLINE : WATERS;
+const DEFAULT_WATERS_FILE = path.resolve(
+  process.cwd(),
+  'data/datasets/maltese-waters-contour.geojson',
+);
 
 export type LngLat = [number, number]; // [lon, lat]
 
 let cachedSegments: LngLat[][] | null | undefined; // undefined = not loaded, null = file missing
 let cachedLand: LngLat[][][] | null | undefined; // island land rings (Polygon coordinate arrays)
+let cachedWaters: LngLat[][][] | null | undefined; // Maltese national waters rings
 
 const toLngLat = (p: Position): LngLat => [p[0], p[1]];
 const toRing = (ring: Position[]): LngLat[] => ring.map(toLngLat);
@@ -78,6 +83,23 @@ export function landPolygons(): LngLat[][][] {
   return polys;
 }
 
+export function malteseWatersPolygons(): LngLat[][][] {
+  if (cachedWaters !== undefined) return cachedWaters ?? [];
+  const file = process.env.MALTESE_WATERS_FILE || DEFAULT_WATERS_FILE;
+  if (!fs.existsSync(file)) {
+    cachedWaters = null;
+    return [];
+  }
+  const polys: LngLat[][][] = [];
+  for (const g of readGeometries(file)) {
+    if (g.type === 'Polygon') polys.push(g.coordinates.map(toRing));
+    else if (g.type === 'MultiPolygon')
+      g.coordinates.forEach((poly) => polys.push(poly.map(toRing)));
+  }
+  cachedWaters = polys;
+  return polys;
+}
+
 function loadCoastlineSegments(): LngLat[][] | null {
   if (cachedSegments !== undefined) return cachedSegments;
   const file = process.env.COASTLINE_FILE || DEFAULT_FILE;
@@ -109,10 +131,6 @@ function loadCoastlineSegments(): LngLat[][] | null {
   }
   cachedSegments = segments;
   return segments;
-}
-
-export function coastlineAvailable(): boolean {
-  return loadCoastlineSegments() !== null;
 }
 
 function dist(a: LngLat, b: LngLat): number {

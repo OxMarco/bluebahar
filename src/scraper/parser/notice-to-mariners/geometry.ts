@@ -17,6 +17,9 @@ import {
   sector as turfSector,
   bearing as turfBearing,
   booleanIntersects,
+  booleanPointInPolygon,
+  booleanWithin,
+  feature as turfFeature,
   featureCollection as turfFC,
   rewind as turfRewind,
 } from '@turf/turf';
@@ -25,6 +28,7 @@ import type {
   FeatureCollection,
   Geometry,
   MultiPolygon,
+  Point,
   Polygon,
 } from 'geojson';
 import type { Area, NoticeExtraction, ResolvedPoint } from './types';
@@ -32,6 +36,7 @@ import {
   closeRing,
   coastlineArc,
   landPolygons,
+  malteseWatersPolygons,
   type LngLat,
 } from './coastline';
 import { inBbox } from './core';
@@ -72,14 +77,53 @@ function seawardOnly(
   return out;
 }
 
-export type BuiltFeature = Feature<Geometry | null> & {
+type SimpleGeometry = Exclude<Geometry, { type: 'GeometryCollection' }>;
+
+function simpleGeometries(geometry: Geometry): SimpleGeometry[] {
+  if (geometry.type !== 'GeometryCollection') return [geometry];
+  return geometry.geometries.flatMap(simpleGeometries);
+}
+
+function pointWithinPolygon(point: Point, polygon: Feature<Polygon>): boolean {
+  return booleanPointInPolygon(turfFeature(point), polygon);
+}
+
+function geometryWithinPolygon(
+  geometry: SimpleGeometry,
+  polygon: Feature<Polygon>,
+): boolean {
+  try {
+    return geometry.type === 'Point'
+      ? pointWithinPolygon(geometry, polygon)
+      : booleanWithin(turfFeature(geometry), polygon);
+  } catch {
+    return false;
+  }
+}
+
+function geometryEntirelyOnLand(geometry: Geometry): boolean {
+  const land = landPolygons().map((rings) => turfPolygon(rings));
+  if (land.length === 0) return false;
+  const parts = simpleGeometries(geometry);
+  return parts.every((part) =>
+    land.some((polygon) => geometryWithinPolygon(part, polygon)),
+  );
+}
+
+function geometryInsideMalteseWaters(geometry: Geometry): boolean {
+  const waters = malteseWatersPolygons().map((rings) => turfPolygon(rings));
+  if (waters.length === 0) return true;
+  const parts = simpleGeometries(geometry);
+  return parts.every((part) =>
+    waters.some((polygon) => geometryWithinPolygon(part, polygon)),
+  );
+}
+
+type BuiltFeature = Feature<Geometry | null> & {
   properties: Record<string, unknown>;
 };
 
-export function buildAreaFeature(
-  area: Area,
-  notice: NoticeExtraction,
-): BuiltFeature {
+function buildAreaFeature(area: Area, notice: NoticeExtraction): BuiltFeature {
   const warnings: string[] = [];
   // Exclude gross outliers (likely typos) from the plotted geometry, but keep them named.
   const outliers = clusterOutliers(area.points);
@@ -199,6 +243,15 @@ export function buildAreaFeature(
     geometry = turfRewind(geometry, {
       reverse: false,
     }) as Geometry;
+  }
+
+  if (geometry) {
+    if (geometryEntirelyOnLand(geometry)) {
+      warnings.push(`geometry_entirely_on_land:${area.area_id}`);
+    }
+    if (!geometryInsideMalteseWaters(geometry)) {
+      warnings.push(`geometry_outside_maltese_waters:${area.area_id}`);
+    }
   }
 
   return {

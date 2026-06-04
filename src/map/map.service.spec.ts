@@ -165,9 +165,6 @@ describe('MapService', () => {
       .mockResolvedValueOnce(6)
       .mockResolvedValueOnce(5)
       .mockResolvedValueOnce(1)
-      .mockResolvedValueOnce(4)
-      .mockResolvedValueOnce(3)
-      .mockResolvedValueOnce(1)
       .mockResolvedValueOnce(2)
       .mockResolvedValueOnce(1)
       .mockResolvedValueOnce(1);
@@ -186,19 +183,13 @@ describe('MapService', () => {
     expect(result.byKind).toEqual([
       { kind: NoticeKind.AREA, total: 6, publicCount: 5, needsReviewCount: 1 },
       {
-        kind: NoticeKind.FACILITY,
-        total: 4,
-        publicCount: 3,
-        needsReviewCount: 1,
-      },
-      {
         kind: NoticeKind.ADVISORY,
         total: 2,
         publicCount: 1,
         needsReviewCount: 1,
       },
     ]);
-    expect(count).toHaveBeenCalledTimes(14);
+    expect(count).toHaveBeenCalledTimes(11);
   });
 
   it('atomically increments the report counter', async () => {

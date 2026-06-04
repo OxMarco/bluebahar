@@ -24,13 +24,6 @@ import {
   type ParsedNotice,
 } from './adapter';
 
-export type {
-  ParsedNotice,
-  NoticePoint,
-  NoticeGeometryPart,
-  NoticeGeometryType,
-} from './adapter';
-
 export interface ExtractOptions {
   // Run the AI enrichment step (category + summary). Defaults to true when an
   // OpenAI client is supplied; set false for fully offline/deterministic runs.
