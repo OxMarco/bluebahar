@@ -59,6 +59,13 @@ export class ScraperProcessor extends WorkerHost {
 
     const parsed = await extractNoticeFromPdf(url, this.openai);
 
+    // Empty result means the notice's validity window has already lapsed and
+    // the extractor skipped it — nothing to store. (insert([]) would also throw.)
+    if (parsed.length === 0) {
+      this.logger.log(`Skipped already-expired notice at URL ${url}`);
+      return;
+    }
+
     // A single PDF may yield multiple records (e.g. a VTS notice listing
     // several bunkering areas). Single-statement insert keeps it atomic —
     // partial inserts on retry would collide with unique(source, subKey).

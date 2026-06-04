@@ -18,7 +18,11 @@ import { basename, readPdfTextFromBuffer } from './core';
 import { runRegex } from './regex-strategy';
 import { buildFeatureCollection } from './geometry';
 import { enrichNotice, type Enrichment } from './enrich';
-import { adaptToParsedNotice, type ParsedNotice } from './adapter';
+import {
+  adaptToParsedNotice,
+  noticeExpiry,
+  type ParsedNotice,
+} from './adapter';
 
 export type {
   ParsedNotice,
@@ -31,6 +35,9 @@ export interface ExtractOptions {
   // Run the AI enrichment step (category + summary). Defaults to true when an
   // OpenAI client is supplied; set false for fully offline/deterministic runs.
   enrich?: boolean;
+  // Wall-clock reference for the already-expired check. Defaults to now;
+  // injectable for deterministic tests.
+  now?: Date;
 }
 
 export async function extractNoticeFromPdf(
@@ -54,6 +61,19 @@ export async function extractNoticeFromBuffer(
 ): Promise<ParsedNotice[]> {
   const { text, pages } = await readPdfTextFromBuffer(buffer);
   const { extraction, meta } = runRegex(text, pages, basename(source));
+
+  // Discard notices whose validity window has already lapsed before the
+  // expensive enrichment + storage steps. Validity is extracted deterministically
+  // by runRegex, so this needs no PDF re-read or LLM call. Notices that never
+  // expire (or whose expiry we couldn't extract) have no valid_to and fall
+  // through. The listing page already drops most expired notices via
+  // data-expiredon; this catches the ones whose real expiry only the PDF states.
+  const expiry = noticeExpiry(extraction);
+  const now = opts.now ?? new Date();
+  if (expiry && expiry.getTime() < now.getTime()) {
+    return [];
+  }
+
   const featureCollection = buildFeatureCollection(extraction);
 
   const notes = [...meta.notes];

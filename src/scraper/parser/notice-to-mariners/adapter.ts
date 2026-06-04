@@ -121,6 +121,14 @@ function parseDate(iso: string | null, endOfDay = false): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+// End of a notice's validity window — identical to the activeTo stored on the
+// row (end-of-day for date-only values). Returns null when the notice never
+// expires or no expiry could be extracted. Exposed so the extraction pipeline
+// can discard already-lapsed notices before enrichment and storage.
+export function noticeExpiry(extraction: NoticeExtraction): Date | null {
+  return parseDate(extraction.valid_to, true);
+}
+
 const DOC_TYPE_LABELS: Record<DocumentType, string> = {
   new_restriction: 'New restriction',
   amendment: 'Amendment to a Notice to Mariners',

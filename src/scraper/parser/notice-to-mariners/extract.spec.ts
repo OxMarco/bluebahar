@@ -181,6 +181,40 @@ describe('extractNoticeFromBuffer orchestration', () => {
     expect(out[0].description).toContain('New restriction.');
   });
 
+  it('skips enrichment and yields no records for an already-expired notice', async () => {
+    jest
+      .spyOn(core, 'readPdfTextFromBuffer')
+      .mockResolvedValue(fixture('Not_35_of_2026'));
+    const create = jest.fn();
+
+    // Not_35_of_2026 is valid through 2026-06-08; reference a later "now".
+    const out = await extractNoticeFromBuffer(
+      new Uint8Array(),
+      'file://Not_35_of_2026.pdf',
+      fakeOpenAI(create),
+      { now: new Date('2026-06-09T00:00:00.000Z') },
+    );
+
+    expect(out).toHaveLength(0);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('still parses a notice whose validity window has not yet lapsed', async () => {
+    jest
+      .spyOn(core, 'readPdfTextFromBuffer')
+      .mockResolvedValue(fixture('Not_35_of_2026'));
+    const create = jest.fn().mockRejectedValue(new Error('offline'));
+
+    const out = await extractNoticeFromBuffer(
+      new Uint8Array(),
+      'file://Not_35_of_2026.pdf',
+      fakeOpenAI(create),
+      { now: new Date('2026-06-08T15:00:00.000Z') },
+    );
+
+    expect(out).toHaveLength(1);
+  });
+
   it('skips the AI call entirely when enrich is disabled', async () => {
     jest
       .spyOn(core, 'readPdfTextFromBuffer')
