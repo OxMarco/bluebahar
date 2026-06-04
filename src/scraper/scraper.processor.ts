@@ -8,10 +8,13 @@ import * as Sentry from '@sentry/nestjs';
 import OpenAI from 'openai';
 import { NoticeToMariners } from './entities/notice-to-mariners.entity';
 import { Logs } from './entities/logs.entity';
-import { extractNoticeFromPdf } from './parser/notice-to-mariners';
+import {
+  extractNoticeFromPdf,
+  flagInvalidNotices,
+} from './parser/notice-to-mariners';
 import { LogType } from './log-type';
 
-type NoticeJobData = { url: string };
+type NoticeJobData = { url: string; title?: string };
 
 @Processor('scraper', { concurrency: 1 })
 export class ScraperProcessor extends WorkerHost {
@@ -56,7 +59,9 @@ export class ScraperProcessor extends WorkerHost {
     const url = job.data.url;
     this.logger.debug(`Processing notice to mariners at URL ${url}`);
 
-    const parsed = await extractNoticeFromPdf(url, this.openai);
+    const parsed = await extractNoticeFromPdf(url, this.openai, {
+      listingTitle: job.data.title,
+    });
 
     // Empty result means the notice's validity window has already lapsed and
     // the extractor skipped it — nothing to store. (insert([]) would also throw.)
@@ -65,10 +70,19 @@ export class ScraperProcessor extends WorkerHost {
       return;
     }
 
+    // Structural-integrity gate at the DB boundary: validate every record as a
+    // well-formed ParsedNotice regardless of which extraction branch produced
+    // each field (deterministic regex, listing anchor, or AI enrichment — only
+    // the last was previously schema-checked). Rather than reject a malformed
+    // record — which would discard a possibly safety-critical notice — failures
+    // are folded into needsReview so the record is still persisted but hidden
+    // from public getters until a human curates it (and Sentry-alerted below).
+    const records = flagInvalidNotices(parsed);
+
     // A single PDF may yield multiple records (e.g. a VTS notice listing
     // several bunkering areas). Single-statement insert keeps it atomic —
     // partial inserts on retry would collide with unique(source, subKey).
-    await this.noticeRepository.insert(parsed);
+    await this.noticeRepository.insert(records);
 
     const log = this.logsRepository.create({
       logType: LogType.NEW_NTM_AUTO,
@@ -82,7 +96,7 @@ export class ScraperProcessor extends WorkerHost {
     // captureMessage rather than throw — throwing would mark the job failed
     // and trigger Bull retries against now-existing rows, hitting the
     // unique(source, subKey) constraint.
-    const flagged = parsed.filter((p) => p.needsReview);
+    const flagged = records.filter((p) => p.needsReview);
     for (const p of flagged) {
       this.logger.warn(
         `Notice ${url}${p.subKey ? ` [${p.subKey}]` : ''} flagged for manual review`,
@@ -101,19 +115,19 @@ export class ScraperProcessor extends WorkerHost {
       });
     }
     if (flagged.length === 0) {
-      this.logger.log(`Stored ${parsed.length} notice(s) from ${url}`);
+      this.logger.log(`Stored ${records.length} notice(s) from ${url}`);
     }
 
     // Public (non-flagged) notices with no geometry get served to the app with
     // geometry: null, so they drop no map pin and the mariner can't tap them.
     // Often legitimate (a notice that names no location), but worth counting so
     // we can tell genuine location-less notices from extraction gaps.
-    const noGeometry = parsed.filter(
+    const noGeometry = records.filter(
       (p) => !p.needsReview && p.areas.length === 0,
     );
     if (noGeometry.length > 0) {
       this.logger.warn(
-        `${noGeometry.length}/${parsed.length} notice(s) from ${url} stored without geometry (no map pin)`,
+        `${noGeometry.length}/${records.length} notice(s) from ${url} stored without geometry (no map pin)`,
       );
     }
   }

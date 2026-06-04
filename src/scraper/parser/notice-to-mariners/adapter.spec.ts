@@ -401,5 +401,58 @@ describe('adaptToParsedNotice', () => {
       expect(result.title).toBe('99/2026');
       expect(result.subKey).toBe('');
     });
+
+    it('falls back to the listing anchor title before referenceId', () => {
+      const result = adaptToParsedNotice(
+        input({
+          extraction: extraction({ title: null }),
+          listingTitle: 'Minimum Towage Requirement',
+        }),
+      );
+      expect(result.title).toBe('Minimum Towage Requirement');
+    });
+
+    it('never uses a URL/path fragment listing title (e.g. filestreaming.asp)', () => {
+      const result = adaptToParsedNotice(
+        input({
+          extraction: extraction({ title: null }),
+          listingTitle: 'filestreaming.asp?fileid=11606',
+        }),
+      );
+      // Rejected as URL-like; falls through to referenceId.
+      expect(result.title).toBe('99/2026');
+    });
+
+    it('flags the record for review if a URL-like title ever reaches the output', () => {
+      // Simulate a URL leaking in via regex/AI extraction (extraction.title is
+      // taken verbatim, ahead of the sanitised listing fallback).
+      const result = adaptToParsedNotice(
+        input({
+          extraction: extraction({ title: 'filestreaming.asp?fileid=11606' }),
+        }),
+      );
+      expect(result.needsReview).toBe(true);
+      expect(result.reviewReasons).toContain('title_looks_like_url');
+    });
+
+    it('does not flag a normal human title', () => {
+      const result = adaptToParsedNotice(input());
+      expect(result.reviewReasons).not.toContain('title_looks_like_url');
+    });
+
+    it('falls back to the generic label when nothing usable is available', () => {
+      const result = adaptToParsedNotice(
+        input({
+          extraction: extraction({
+            title: null,
+            notice_no: null,
+            notice_year: null,
+          }),
+          listingTitle:
+            'https://www.transport.gov.mt/include/filestreaming.asp?fileid=11606',
+        }),
+      );
+      expect(result.title).toBe('Notice to Mariners');
+    });
   });
 });

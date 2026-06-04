@@ -23,7 +23,7 @@ function link(url: string): PdfLink {
 
 // Mirrors the deterministic jobId the service derives from each notice URL.
 function jobId(url: string): string {
-  return `ntm:${createHash('sha256').update(url).digest('hex')}`;
+  return `ntm-${createHash('sha256').update(url).digest('hex')}`;
 }
 
 describe('ScraperService', () => {
@@ -92,13 +92,19 @@ describe('ScraperService', () => {
     expect(add).toHaveBeenNthCalledWith(
       1,
       'notice-to-mariners',
-      { url: 'https://example.com/new-1.pdf' },
+      {
+        url: 'https://example.com/new-1.pdf',
+        title: 'https://example.com/new-1.pdf',
+      },
       { jobId: jobId('https://example.com/new-1.pdf') },
     );
     expect(add).toHaveBeenNthCalledWith(
       2,
       'notice-to-mariners',
-      { url: 'https://example.com/new-2.pdf' },
+      {
+        url: 'https://example.com/new-2.pdf',
+        title: 'https://example.com/new-2.pdf',
+      },
       { jobId: jobId('https://example.com/new-2.pdf') },
     );
   });

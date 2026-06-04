@@ -51,6 +51,9 @@ export interface AdaptInput {
   enrichment: Enrichment | null;
   // Strategy + enrichment notes (e.g. "coords:7", "likely_scanned_pdf:…").
   notes: string[];
+  // Anchor text scraped from the listing page link (PdfLink.title). Used as a
+  // human-readable title fallback when the PDF yields no title/reference.
+  listingTitle?: string;
 }
 
 function xy(c: Position): NoticePoint {
@@ -109,6 +112,20 @@ function referenceId(x: NoticeExtraction): string | null {
   return x.notice_no && x.notice_year
     ? `${x.notice_no}/${x.notice_year}`
     : null;
+}
+
+// A listing-page anchor title is only useful as a notice title if it's human
+// text. Reject empties and URL/path fragments — Transport Malta serves PDFs via
+// opaque handlers like `filestreaming.asp?fileid=11606`, and that string must
+// never reach a title. (This is also why we no longer fall back to the source
+// URL basename: there is no real filename to recover from such URLs.)
+function usableTitle(raw: string | undefined | null): string | null {
+  const t = raw?.trim();
+  if (!t) return null;
+  if (/^(https?:)?\/\//i.test(t) || /\.(aspx?|php|pdf|html?)\b/i.test(t)) {
+    return null;
+  }
+  return t;
 }
 
 function parseDate(iso: string | null, endOfDay = false): Date | null {
@@ -238,8 +255,8 @@ export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
 
   const title =
     extraction.title ||
+    usableTitle(input.listingTitle) ||
     referenceId(extraction) ||
-    extraction.source_file ||
     'Notice to Mariners';
 
   const firstAreaName = extraction.areas.find((a) => a.name)?.name ?? undefined;
@@ -264,12 +281,21 @@ export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
     areas.length === 0 &&
     noticeCoordCount(notes) > 0 &&
     extraction.document_type === 'new_restriction';
+  // Output invariant (defence in depth): a title must be human text, never a
+  // URL/path fragment. usableTitle() already strips those from the listing
+  // fallback and we no longer fall back to the source URL — but if a URL ever
+  // reaches here via regex/AI extraction, flag the record for review rather than
+  // publish it silently (this is the failure mode that produced the
+  // "filestreaming.asp?fileid=11606" title). usableTitle returns null only for
+  // empty or URL-like strings; the final title is never empty.
+  const titleLooksLikeUrl = usableTitle(title) === null;
   const reviewReasons = uniqueReasons([
     ...seriousWarnings,
     ...scannedReasons,
     ...genericDropReasons,
     usedGenericFallback ? 'generic_extraction_verify_geometry' : null,
     suspiciousEmpty ? 'restriction_with_coordinates_but_no_geometry' : null,
+    titleLooksLikeUrl ? 'title_looks_like_url' : null,
   ]);
 
   return {

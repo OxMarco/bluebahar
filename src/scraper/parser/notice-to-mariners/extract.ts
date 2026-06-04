@@ -31,6 +31,9 @@ export interface ExtractOptions {
   // Wall-clock reference for the already-expired check. Defaults to now;
   // injectable for deterministic tests.
   now?: Date;
+  // Anchor text from the listing page link (PdfLink.title), used as a
+  // human-readable title fallback when the PDF yields no title/reference.
+  listingTitle?: string;
 }
 
 export async function extractNoticeFromPdf(
@@ -92,6 +95,7 @@ export async function extractNoticeFromBuffer(
       featureCollection,
       enrichment,
       notes,
+      listingTitle: opts.listingTitle,
     }),
   ];
 }
