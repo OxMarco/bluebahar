@@ -38,8 +38,9 @@ export interface ParsedNotice {
   areas: NoticeGeometryPart[];
   // True when geometry was missing/broken, a coordinate fell outside Malta, a
   // source typo was excluded, the PDF looked scanned, or a restriction notice
-  // yielded no geometry despite carrying coordinates. Flagged rows are
-  // persisted but hidden from public getters for human curation.
+  // yielded no geometry despite carrying coordinates / coordinate-like text.
+  // Flagged rows are persisted but hidden from public getters for human
+  // curation.
   needsReview: boolean;
   reviewReasons: string[];
 }
@@ -271,6 +272,9 @@ export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
     (w) => !w.startsWith('coastline_closure_fallback'),
   );
   const scannedReasons = notes.filter((n) => n.includes('likely_scanned_pdf'));
+  const possibleCoordReasons = notes.filter((n) =>
+    n.startsWith('possible_coords_unparsed:'),
+  );
   const genericDropReasons = notes.filter((n) =>
     n.startsWith('generic_coord_outside_malta_bbox:'),
   );
@@ -292,6 +296,7 @@ export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
   const reviewReasons = uniqueReasons([
     ...seriousWarnings,
     ...scannedReasons,
+    ...possibleCoordReasons,
     ...genericDropReasons,
     usedGenericFallback ? 'generic_extraction_verify_geometry' : null,
     suspiciousEmpty ? 'restriction_with_coordinates_but_no_geometry' : null,

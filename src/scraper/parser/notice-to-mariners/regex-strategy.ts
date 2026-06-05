@@ -8,6 +8,7 @@ import {
   classifyDocumentType,
   inferHazardType,
   extractValidityWindow,
+  countPossibleCoordinateRows,
   parseDmm,
   inBbox,
   resolveLabels,
@@ -527,6 +528,10 @@ export function runRegex(
   // A near-empty text layer means the PDF is scanned images — regex can't see
   // anything. Flag it so the caller can surface a manual-review hint.
   const notes = [`coords:${coords.length}`];
+  if (coords.length === 0) {
+    const possible = countPossibleCoordinateRows(text);
+    if (possible > 0) notes.push(`possible_coords_unparsed:${possible}`);
+  }
   const areas = buildAreas(
     text,
     coords,

@@ -202,6 +202,22 @@ Insert symbol indicating a foul area with a 500m radius, in position.
     expect(notice.needsReview).toBe(false);
   });
 
+  it('flags coordinate-like rows when strict extraction misses the separator', () => {
+    const notice = pipelineText(`
+PORTS AND YACHTING DIRECTORATE
+NOTICE TO MARINERS No 83 of 2026
+3 June 2026
+Temporary restricted area
+Mariners are notified that a restricted area is established.
+Position Latitude (N) Longitude (E)
+35 deg 57.233 014 deg 19.088
+`);
+
+    expect(notice.areas).toHaveLength(0);
+    expect(notice.needsReview).toBe(true);
+    expect(notice.reviewReasons).toContain('possible_coords_unparsed:1');
+  });
+
   it('still flags a multi-point chart correction as inferred geometry', () => {
     // A chart correction whose positions get joined into a polygon is a guess,
     // so it stays in the review queue even though it now extracts geometry.

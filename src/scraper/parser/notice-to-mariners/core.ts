@@ -148,6 +148,8 @@ const COORD_RE =
     String.raw`(?:\b(?<label>\d{1,3}[A-Z])\s+)?(?<latDeg>\d{2})\s*${DEGREE_MARK}\s*(?<latMin>\d{2})\s*['′]\s*\.?\s*(?<latFrac>\d{1,3})\s+(?<lonDeg>0?\d{2,3})\s*${DEGREE_MARK}\s*(?<lonMin>\d{2})\s*['′]\s*\.?\s*(?<lonFrac>\d{1,3})`,
     'g',
   );
+const LOOSE_COORD_RE =
+  /\b(?:[A-Z]\d?|\d{1,3}[A-Z])?\.?\s*(3[56])\D{1,12}([0-5]\d)(?:\D{0,4}(\d{1,3}))?\D{1,28}(0?14)\D{1,12}([0-5]\d)(?:\D{0,4}(\d{1,3}))?/g;
 
 export type RawCoord = ResolvedPoint & { raw: string; generatedLabel: boolean };
 
@@ -167,6 +169,27 @@ export function extractCoordinates(text: string): RawCoord[] {
     });
   }
   return out;
+}
+
+// Soft tripwire for parser misses: detects Malta-looking DMM coordinate rows
+// even when an unexpected separator/glyph made the strict parser reject them.
+// It intentionally does not produce coordinates; callers use it only to avoid
+// silently publishing a notice with no map geometry.
+export function countPossibleCoordinateRows(text: string): number {
+  let count = 0;
+  for (const m of text.matchAll(LOOSE_COORD_RE)) {
+    const context = text.slice(
+      Math.max(0, (m.index ?? 0) - 120),
+      Math.min(text.length, (m.index ?? 0) + m[0].length + 120),
+    );
+    const hasFraction = Boolean(m[3] || m[6]);
+    const hasCoordinateContext =
+      /\b(?:latitude|longitude|position|coordinates?|wgs|datum)\b/i.test(
+        context,
+      );
+    if (hasFraction || hasCoordinateContext) count++;
+  }
+  return count;
 }
 
 export function resolveLabels<T extends ResolvedPoint>(
