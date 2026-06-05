@@ -37,6 +37,7 @@ const NOTICE_TIME_ZONE = 'Europe/Malta';
 function normalizeText(input: string): string {
   return input
     .normalize('NFKC')
+    .replace(/\uF0B0/g, '°')
     .replace(/[‘’`´]/g, "'")
     .replace(/[“”]/g, '"')
     .replace(/\u00A0/g, ' ')
@@ -141,8 +142,12 @@ function localNoticeDateTimeToUtcIso(
 }
 
 // A single DMM coordinate ROW: "1A 35° 49'.213 014° 27'.724" (label optional).
+const DEGREE_MARK = String.raw`[°º˚\uF0B0]`;
 const COORD_RE =
-  /(?:\b(?<label>\d{1,3}[A-Z])\s+)?(?<latDeg>\d{2})\s*°\s*(?<latMin>\d{2})\s*['′]\s*\.?\s*(?<latFrac>\d{1,3})\s+(?<lonDeg>0?\d{2,3})\s*°\s*(?<lonMin>\d{2})\s*['′]\s*\.?\s*(?<lonFrac>\d{1,3})/g;
+  new RegExp(
+    String.raw`(?:\b(?<label>\d{1,3}[A-Z])\s+)?(?<latDeg>\d{2})\s*${DEGREE_MARK}\s*(?<latMin>\d{2})\s*['′]\s*\.?\s*(?<latFrac>\d{1,3})\s+(?<lonDeg>0?\d{2,3})\s*${DEGREE_MARK}\s*(?<lonMin>\d{2})\s*['′]\s*\.?\s*(?<lonFrac>\d{1,3})`,
+    'g',
+  );
 
 export type RawCoord = ResolvedPoint & { raw: string; generatedLabel: boolean };
 

@@ -182,6 +182,26 @@ Position Latitude (N) Longitude (E)
     expect(notice.distance).toBe(500);
   });
 
+  it('accepts Transport Malta private-use degree glyphs in coordinate rows', () => {
+    const notice = pipelineText(`
+PORTS AND YACHTING DIRECTORATE
+NOTICE TO MARINERS No 82 of 2026
+3 June 2026
+Chart Correction - Foul area (Lost anchor and chain)
+Mariners are notified that an anchor and chain were lost within Bunkering Area 6.
+LATITUDE (N) LONGITUDE (E)
+35\uF0B0 57'.233 014\uF0B0 19'.088
+Insert symbol indicating a foul area with a 500m radius, in position.
+`);
+
+    expect(notice.areas).toHaveLength(1);
+    expect(notice.areas[0].geometryType).toBe('point');
+    expect(notice.areas[0].points[0].lat).toBeCloseTo(35.95388333);
+    expect(notice.areas[0].points[0].long).toBeCloseTo(14.31813333);
+    expect(notice.distance).toBe(500);
+    expect(notice.needsReview).toBe(false);
+  });
+
   it('still flags a multi-point chart correction as inferred geometry', () => {
     // A chart correction whose positions get joined into a polygon is a guess,
     // so it stays in the review queue even though it now extracts geometry.

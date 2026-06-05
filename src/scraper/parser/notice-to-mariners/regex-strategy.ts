@@ -217,7 +217,7 @@ type PosCoord = {
 };
 
 const GEN_ROW =
-  /(?:\b([A-Z]\d?|\d{1,3}[A-Z])\.?\s+)?(\d{2,3})\s*°\s*(\d{2})\s*['′]\s*\.?\s*(\d{1,3})\s+(0?\d{2,3})\s*°\s*(\d{2})\s*['′]\s*\.?\s*(\d{1,3})/g;
+  /(?:\b([A-Z]\d?|\d{1,3}[A-Z])\.?\s+)?(\d{2,3})\s*[°º˚\uF0B0]\s*(\d{2})\s*['′]\s*\.?\s*(\d{1,3})\s+(0?\d{2,3})\s*[°º˚\uF0B0]\s*(\d{2})\s*['′]\s*\.?\s*(\d{1,3})/g;
 
 function scanCoords(text: string): {
   coords: PosCoord[];
@@ -257,7 +257,7 @@ function titleNear(text: string, idx: number): string | null {
     const l = lines[i];
     if (/latitude|longitude|^point\b|^position\b|^\(?[NE]\)?$/i.test(l))
       continue;
-    if (/[A-Za-z]{4,}/.test(l) && !/^\d{1,3}\s*°/.test(l))
+    if (/[A-Za-z]{4,}/.test(l) && !/^\d{1,3}\s*[°º˚\uF0B0]/.test(l))
       return l.replace(/\s*[-–]\s*$/, '').slice(0, 90);
   }
   return null;
