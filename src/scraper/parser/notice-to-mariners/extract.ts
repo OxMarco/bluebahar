@@ -14,6 +14,7 @@
 // reach the database via the model.
 import OpenAI from 'openai';
 import { fetchBufferViaProxy } from '../../../common/utils/http';
+import { errorMessage } from '../../../common/utils/error-message';
 import { basename, readPdfTextFromBuffer } from './core';
 import { runRegex } from './regex-strategy';
 import { buildFeatureCollection } from './geometry';
@@ -82,9 +83,7 @@ export async function extractNoticeFromBuffer(
     try {
       enrichment = await enrichNotice(openai, text, extraction);
     } catch (err) {
-      notes.push(
-        `enrichment_failed:${err instanceof Error ? err.message : String(err)}`,
-      );
+      notes.push(`enrichment_failed:${errorMessage(err)}`);
     }
   }
 

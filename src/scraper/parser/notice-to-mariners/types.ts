@@ -70,9 +70,7 @@ export type NoticeExtraction = {
   safety_distance_m?: number | null;
 };
 
-// Strategy metadata: latency and free-form notes (coord counts, fallbacks).
+// Strategy metadata: free-form notes (coord counts, fallbacks).
 export type StrategyMeta = {
-  latency_ms: number;
-  model: string | null;
   notes: string[];
 };

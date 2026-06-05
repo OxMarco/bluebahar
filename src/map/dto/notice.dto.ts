@@ -16,7 +16,7 @@ export type GeoJsonPolygon = {
 // render inside a ShapeSource.
 export type NoticeGeometry = GeoJsonPoint | GeoJsonLineString | GeoJsonPolygon;
 
-export type NoticeGeometryKind = 'point' | 'line' | 'polygon';
+type NoticeGeometryKind = 'point' | 'line' | 'polygon';
 
 export type NoticeFeature = {
   type: 'Feature';

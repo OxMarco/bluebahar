@@ -1,8 +1,4 @@
 import { NoticeDto } from './notice.dto';
+import { Paginated } from '../../common/dto/paginated.dto';
 
-export class PaginatedNoticesDto {
-  items!: NoticeDto[];
-  limit!: number;
-  offset!: number;
-  hasMore!: boolean;
-}
+export class PaginatedNoticesDto extends Paginated<NoticeDto> {}

@@ -8,9 +8,11 @@ import {
 import type { HealthIndicatorResult } from '@nestjs/terminus';
 import * as Sentry from '@sentry/nestjs';
 import { bbox as turfBbox } from '@turf/bbox';
+import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { errorMessage } from '../common/utils/error-message';
 import {
   DATASETS,
   DEFAULT_DATASET_BOUNDS,
@@ -26,21 +28,8 @@ import type { NormalizedFeatureProperties } from './normalize/normalized-feature
 // resolved from process.cwd() since both `npm start` and the Dockerfile's
 // WORKDIR /app put us at the project root.
 const DATASETS_DIR = resolve(process.cwd(), 'data/datasets');
-// GeometryCollection is intentionally excluded: Mapbox GL — and so the app's
-// rnmapbox/maps ShapeSource — silently refuses to render it, so a dataset that
-// smuggled one in would validate fine and then vanish on the map. Reject it at
-// load time instead. (Notices avoid this by shipping a FeatureCollection — see
-// notice-serializer.ts.)
-const SUPPORTED_GEOMETRY_TYPES = new Set([
-  'Point',
-  'MultiPoint',
-  'LineString',
-  'MultiLineString',
-  'Polygon',
-  'MultiPolygon',
-]);
 
-export type GeoJsonBbox = [number, number, number, number];
+type GeoJsonBbox = [number, number, number, number];
 
 export interface DatasetMetadata {
   key: string;
@@ -115,7 +104,7 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
         const entry = await this.loadEntry(def, filePath);
         this.entries.set(def.key, entry);
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         this.loadFailures.set(def.key, message);
         // A missing or malformed file shouldn't crash the whole app — the
         // notices endpoints stay useful even if a dataset is misconfigured.
@@ -367,11 +356,11 @@ function summarizeFeatures(
   def: DatasetDefinition,
   features: GeoJsonFeature[],
 ): GeoJsonSummary {
-  const bounds = boundsFor(def);
   if (features.length === 0) {
     throw new Error(`Dataset "${def.key}" has no features`);
   }
 
+  const geometry = geometrySchema(boundsFor(def));
   const types = new Set<string>();
   for (const [index, feature] of features.entries()) {
     if (!isRecord(feature) || feature.type !== 'Feature') {
@@ -384,7 +373,13 @@ function summarizeFeatures(
         `Feature ${index} in "${def.key}" has invalid properties`,
       );
     }
-    validateGeometry(def.key, bounds, index, feature.geometry, types);
+    const result = geometry.safeParse(feature.geometry);
+    if (!result.success) {
+      throw new Error(
+        `Feature ${index} in "${def.key}" has invalid geometry: ${formatIssues(result.error)}`,
+      );
+    }
+    types.add(result.data.type);
   }
 
   const bbox = geoJsonBbox({
@@ -402,170 +397,61 @@ function summarizeFeatures(
   };
 }
 
-function validateGeometry(
-  datasetKey: string,
-  bounds: DatasetBounds,
-  featureIndex: number,
-  geometry: unknown,
-  types: Set<string>,
-) {
-  if (!isRecord(geometry)) {
-    throw new Error(
-      `Feature ${featureIndex} in "${datasetKey}" has no geometry`,
+// GeoJSON geometry validation as a bounds-aware zod schema. The discriminated
+// union admits only the six renderable types; GeometryCollection is excluded on
+// purpose — Mapbox GL (and so the app's rnmapbox/maps ShapeSource) silently
+// refuses to render it, so a dataset that smuggled one in would validate fine
+// and then vanish on the map. The position refinement enforces finite, in-bounds
+// coordinates, and polygon rings must be closed.
+function geometrySchema(bounds: DatasetBounds) {
+  const position = z
+    .array(z.number())
+    .min(2)
+    .refine(
+      (p) =>
+        Number.isFinite(p[0]) &&
+        Number.isFinite(p[1]) &&
+        positionWithin([p[0], p[1]], bounds),
+      'position is non-finite or outside configured dataset bounds',
     );
-  }
+  const ring = z
+    .array(position)
+    .min(4)
+    .refine(isClosedRing, 'polygon ring is not closed');
+  const polygon = z.array(ring).min(1);
 
-  const type = geometry.type;
-  if (typeof type !== 'string' || !SUPPORTED_GEOMETRY_TYPES.has(type)) {
-    throw new Error(
-      `Feature ${featureIndex} in "${datasetKey}" has unsupported geometry type ${String(type)}`,
-    );
-  }
-  types.add(type);
-
-  validateCoordinates(
-    datasetKey,
-    bounds,
-    featureIndex,
-    type,
-    geometry.coordinates,
-  );
-  const bbox = geoJsonBbox(geometry);
-  if (!bbox) {
-    throw new Error(
-      `Feature ${featureIndex} in "${datasetKey}" has no valid coordinates`,
-    );
-  }
+  return z.discriminatedUnion('type', [
+    z.object({ type: z.literal('Point'), coordinates: position }),
+    z.object({
+      type: z.literal('MultiPoint'),
+      coordinates: z.array(position).min(1),
+    }),
+    z.object({
+      type: z.literal('LineString'),
+      coordinates: z.array(position).min(2),
+    }),
+    z.object({
+      type: z.literal('MultiLineString'),
+      coordinates: z.array(z.array(position).min(2)).min(1),
+    }),
+    z.object({ type: z.literal('Polygon'), coordinates: polygon }),
+    z.object({
+      type: z.literal('MultiPolygon'),
+      coordinates: z.array(polygon).min(1),
+    }),
+  ]);
 }
 
-function validateCoordinates(
-  datasetKey: string,
-  bounds: DatasetBounds,
-  featureIndex: number,
-  type: string,
-  coordinates: unknown,
-) {
-  switch (type) {
-    case 'Point':
-      validatePosition(datasetKey, bounds, featureIndex, coordinates);
-      return;
-    case 'MultiPoint':
-      validatePositionArray(datasetKey, bounds, featureIndex, coordinates, 1);
-      return;
-    case 'LineString':
-      validatePositionArray(datasetKey, bounds, featureIndex, coordinates, 2);
-      return;
-    case 'MultiLineString':
-      validateLineArray(datasetKey, bounds, featureIndex, coordinates, 1);
-      return;
-    case 'Polygon':
-      validatePolygon(datasetKey, bounds, featureIndex, coordinates);
-      return;
-    case 'MultiPolygon':
-      if (!Array.isArray(coordinates) || coordinates.length === 0) {
-        throw new Error(
-          `Feature ${featureIndex} in "${datasetKey}" has an empty MultiPolygon`,
-        );
-      }
-      for (const polygon of coordinates) {
-        validatePolygon(datasetKey, bounds, featureIndex, polygon);
-      }
-      return;
-    default:
-      throw new Error(
-        `Feature ${featureIndex} in "${datasetKey}" has unsupported geometry type ${type}`,
-      );
-  }
+function isClosedRing(ring: number[][]): boolean {
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  return first[0] === last[0] && first[1] === last[1];
 }
 
-function validatePositionArray(
-  datasetKey: string,
-  bounds: DatasetBounds,
-  featureIndex: number,
-  coordinates: unknown,
-  minLength: number,
-) {
-  if (!Array.isArray(coordinates) || coordinates.length < minLength) {
-    throw new Error(
-      `Feature ${featureIndex} in "${datasetKey}" has too few coordinates`,
-    );
-  }
-  for (const position of coordinates) {
-    validatePosition(datasetKey, bounds, featureIndex, position);
-  }
-}
-
-function validateLineArray(
-  datasetKey: string,
-  bounds: DatasetBounds,
-  featureIndex: number,
-  coordinates: unknown,
-  minLength: number,
-) {
-  if (!Array.isArray(coordinates) || coordinates.length < minLength) {
-    throw new Error(
-      `Feature ${featureIndex} in "${datasetKey}" has too few line parts`,
-    );
-  }
-  for (const line of coordinates) {
-    validatePositionArray(datasetKey, bounds, featureIndex, line, 2);
-  }
-}
-
-function validatePolygon(
-  datasetKey: string,
-  bounds: DatasetBounds,
-  featureIndex: number,
-  coordinates: unknown,
-) {
-  if (!isUnknownArray(coordinates) || coordinates.length === 0) {
-    throw new Error(
-      `Feature ${featureIndex} in "${datasetKey}" has an empty polygon`,
-    );
-  }
-  for (const ring of coordinates) {
-    validatePositionArray(datasetKey, bounds, featureIndex, ring, 4);
-    if (!isUnknownArray(ring)) {
-      throw new Error(
-        `Feature ${featureIndex} in "${datasetKey}" has an invalid polygon ring`,
-      );
-    }
-    const first = ring[0];
-    const last = ring[ring.length - 1];
-    if (
-      !isUnknownArray(first) ||
-      !isUnknownArray(last) ||
-      first[0] !== last[0] ||
-      first[1] !== last[1]
-    ) {
-      throw new Error(
-        `Feature ${featureIndex} in "${datasetKey}" has an open polygon ring`,
-      );
-    }
-  }
-}
-
-function validatePosition(
-  datasetKey: string,
-  bounds: DatasetBounds,
-  featureIndex: number,
-  position: unknown,
-) {
-  if (
-    !Array.isArray(position) ||
-    position.length < 2 ||
-    !isFiniteNumber(position[0]) ||
-    !isFiniteNumber(position[1])
-  ) {
-    throw new Error(
-      `Feature ${featureIndex} in "${datasetKey}" has invalid coordinates`,
-    );
-  }
-  if (!positionWithin([position[0], position[1]], bounds)) {
-    throw new Error(
-      `Feature ${featureIndex} in "${datasetKey}" has coordinates outside configured dataset bounds`,
-    );
-  }
+function formatIssues(error: z.ZodError): string {
+  return error.issues
+    .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+    .join('; ');
 }
 
 function boundsFor(def: DatasetDefinition): DatasetBounds {
@@ -647,10 +533,6 @@ function geoJsonBbox(value: unknown): GeoJsonBbox | undefined {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
-}
-
-function isUnknownArray(value: unknown): value is unknown[] {
-  return Array.isArray(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

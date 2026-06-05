@@ -8,6 +8,7 @@ import { Logs } from '../scraper/entities/logs.entity';
 import { LogType } from '../scraper/log-type';
 import { DatasetCatalogService } from './dataset-catalog.service';
 import { DATASETS, type DatasetDefinition } from './datasets';
+import { errorMessage } from '../common/utils/error-message';
 
 // Some catalogue layers (bathing-water quality) change on a daily cadence, so
 // unlike the hand-refreshed multi-year layers we re-fetch them from upstream.
@@ -54,7 +55,7 @@ export class DatasetRefreshService implements OnApplicationBootstrap {
     } catch (err) {
       // Keep serving the previous entry (seed or last good fetch) — a flaky
       // upstream shouldn't blank out a live layer. One Sentry alert per failure.
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       this.logger.error(
         `Failed to refresh dataset "${def.key}" from ${def.sourceUrl}: ${message}`,
       );

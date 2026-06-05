@@ -32,8 +32,6 @@ const DEFAULT_WATERS_FILE = path.resolve(
 export type LngLat = [number, number]; // [lon, lat]
 
 let cachedSegments: LngLat[][] | null | undefined; // undefined = not loaded, null = file missing
-let cachedLand: LngLat[][][] | null | undefined; // island land rings (Polygon coordinate arrays)
-let cachedWaters: LngLat[][][] | null | undefined; // Maltese national waters rings
 
 const toLngLat = (p: Position): LngLat => [p[0], p[1]];
 const toRing = (ring: Position[]): LngLat[] => ring.map(toLngLat);
@@ -64,41 +62,38 @@ function readGeometries(file: string): Geometry[] {
   return out;
 }
 
-// The closed island polygons from the coastline file (each is a Polygon's ring
-// set: [outer, ...holes]). Used to clip a cliff buffer to the seaward side.
-export function landPolygons(): LngLat[][][] {
-  if (cachedLand !== undefined) return cachedLand ?? [];
-  const file = process.env.COASTLINE_FILE || DEFAULT_FILE;
-  if (!fs.existsSync(file)) {
-    cachedLand = null;
-    return [];
-  }
+function polygonRingsFrom(file: string): LngLat[][][] {
   const polys: LngLat[][][] = [];
   for (const g of readGeometries(file)) {
     if (g.type === 'Polygon') polys.push(g.coordinates.map(toRing));
     else if (g.type === 'MultiPolygon')
       g.coordinates.forEach((poly) => polys.push(poly.map(toRing)));
   }
-  cachedLand = polys;
   return polys;
 }
 
-export function malteseWatersPolygons(): LngLat[][][] {
-  if (cachedWaters !== undefined) return cachedWaters ?? [];
-  const file = process.env.MALTESE_WATERS_FILE || DEFAULT_WATERS_FILE;
-  if (!fs.existsSync(file)) {
-    cachedWaters = null;
-    return [];
-  }
-  const polys: LngLat[][][] = [];
-  for (const g of readGeometries(file)) {
-    if (g.type === 'Polygon') polys.push(g.coordinates.map(toRing));
-    else if (g.type === 'MultiPolygon')
-      g.coordinates.forEach((poly) => polys.push(poly.map(toRing)));
-  }
-  cachedWaters = polys;
-  return polys;
+// Memoized polygon-ring loader: resolves a file lazily (so env overrides apply),
+// caches the parsed rings, and caches the file-missing case as [] too.
+function makePolygonLoader(resolveFile: () => string): () => LngLat[][][] {
+  let cache: LngLat[][][] | null | undefined;
+  return () => {
+    if (cache !== undefined) return cache ?? [];
+    const file = resolveFile();
+    cache = fs.existsSync(file) ? polygonRingsFrom(file) : null;
+    return cache ?? [];
+  };
 }
+
+// The closed island polygons from the coastline file (each is a Polygon's ring
+// set: [outer, ...holes]). Used to clip a cliff buffer to the seaward side.
+export const landPolygons = makePolygonLoader(
+  () => process.env.COASTLINE_FILE || DEFAULT_FILE,
+);
+
+// The Maltese national-waters contour rings.
+export const malteseWatersPolygons = makePolygonLoader(
+  () => process.env.MALTESE_WATERS_FILE || DEFAULT_WATERS_FILE,
+);
 
 function loadCoastlineSegments(): LngLat[][] | null {
   if (cachedSegments !== undefined) return cachedSegments;

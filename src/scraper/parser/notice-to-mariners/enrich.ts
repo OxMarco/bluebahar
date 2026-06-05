@@ -13,67 +13,49 @@ import type { NoticeExtraction } from './types';
 
 const NOTICE_CATEGORIES = ['alert', 'info', 'other'] as const;
 
-export type NoticeCategory = (typeof NOTICE_CATEGORIES)[number];
+export type Enrichment = z.infer<typeof ENRICH_OUTPUT_SCHEMA>;
 
-export type Enrichment = {
-  category: NoticeCategory;
-  summary: string;
-  recommended_action: string; // "" when none
-  affected_locations: string[];
-  validity: string; // prose active period, "" when none
-  model: string;
-  latency_ms: number;
-};
-
-const ENRICH_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'category',
-    'summary',
-    'recommended_action',
-    'affected_locations',
-    'validity',
-  ],
-  properties: {
-    category: {
-      type: 'string',
-      enum: NOTICE_CATEGORIES,
-      description:
-        'alert = active hazard/restriction a mariner must act on (firing, restricted/prohibited area, danger); info = informational/administrative (chart corrections, cumulative lists, amendments, cancellations); other = neither.',
-    },
-    summary: {
-      type: 'string',
-      description: 'One or two short, plain-language sentences.',
-    },
-    recommended_action: {
-      type: 'string',
-      description:
-        'A single imperative line for a mariner, or empty string if none.',
-    },
-    affected_locations: {
-      type: 'array',
-      items: { type: 'string' },
-      description:
-        'Named places mentioned (bays, headlands, harbours, ranges). Empty array if none.',
-    },
-    validity: {
-      type: 'string',
-      description:
-        "Active period in prose if stated (e.g. '8 June 2026, 16:30-18:00' or 'all year round'), else empty string.",
-    },
-  },
-} as const;
-
+// Single source of truth for the enrichment shape: the zod schema carries the
+// field descriptions (which steer the LLM) and both validates the response and
+// generates the OpenAI request schema below — so the two can never drift.
 const ENRICH_OUTPUT_SCHEMA = z
   .object({
-    category: z.enum(NOTICE_CATEGORIES),
-    summary: z.string(),
-    recommended_action: z.string(),
-    affected_locations: z.array(z.string()),
-    validity: z.string(),
+    category: z
+      .enum(NOTICE_CATEGORIES)
+      .describe(
+        'Classify by the SUBSTANCE of what the notice describes, never by its document type — a "chart correction" can be either. ' +
+          'alert = there is an area to avoid or to navigate with care: a lost/dragging anchor, a newly laid cable or pipeline, a new or moved buoy/mark, a wreck or obstruction, diving or survey operations, fireworks, a firing/gunnery range, a prohibited or restricted area, or any active danger. ' +
+          'info = administrative or non-hazard navigational information: changes to navigation lights, VHF/radio channels or working frequencies, harbour layout/configuration, cumulative lists, amendments, or cancellations. ' +
+          'other = neither.',
+      ),
+    summary: z.string().describe('One or two short, plain-language sentences.'),
+    recommended_action: z
+      .string()
+      .describe(
+        'A single imperative line for a mariner, or empty string if none.',
+      ),
+    affected_locations: z
+      .array(z.string())
+      .describe(
+        'Named places mentioned (bays, headlands, harbours, ranges). Empty array if none.',
+      ),
+    validity: z
+      .string()
+      .describe(
+        "Active period in prose if stated (e.g. '8 June 2026, 16:30-18:00' or 'all year round'), else empty string.",
+      ),
   })
   .strict();
+
+// OpenAI strict structured-output schema, generated from the zod schema. Strip
+// the `$schema` annotation that the API's strict validator rejects.
+function toOpenAiSchema(schema: z.ZodType): Record<string, unknown> {
+  const json = z.toJSONSchema(schema) as Record<string, unknown>;
+  delete json.$schema;
+  return json;
+}
+
+const ENRICH_SCHEMA = toOpenAiSchema(ENRICH_OUTPUT_SCHEMA);
 
 const SYSTEM = [
   'You triage Transport Malta Notices to Mariners for a chart-plotting app.',
@@ -107,11 +89,8 @@ export async function enrichNotice(
   text: string,
   extraction: NoticeExtraction,
 ): Promise<Enrichment> {
-  const model = ENRICH_MODEL();
-  const t0 = Date.now();
-
   const response = await client.responses.create({
-    model,
+    model: ENRICH_MODEL(),
     input: [
       { role: 'system', content: SYSTEM },
       { role: 'user', content: buildContext(text, extraction) },
@@ -128,10 +107,5 @@ export async function enrichNotice(
 
   const jsonText = response.output_text;
   if (!jsonText) throw new Error('empty enrichment output');
-  const e = ENRICH_OUTPUT_SCHEMA.parse(JSON.parse(jsonText));
-  return {
-    ...e,
-    model,
-    latency_ms: Date.now() - t0,
-  };
+  return ENRICH_OUTPUT_SCHEMA.parse(JSON.parse(jsonText));
 }

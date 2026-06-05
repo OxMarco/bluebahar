@@ -11,6 +11,7 @@ import { GetNoticesDto } from './dto/get-notices.dto';
 import { NoticeMetricsDto } from './dto/notice-metrics.dto';
 import { PaginatedNoticesDto } from './dto/paginated-notices.dto';
 import { toNoticeDto } from './notice-serializer';
+import { toPaginated } from '../common/dto/paginated.dto';
 import {
   DatasetCatalogService,
   type DatasetEntry,
@@ -34,25 +35,10 @@ export class MapService {
     const now = new Date();
     // needsReview hides notices whose deterministic extraction failed sanity
     // checks; they're persisted for manual triage but not surfaced publicly.
-    const baseWhere = {
-      needsReview,
-      ...(query.kind ? { kind: query.kind } : {}),
-    };
-
+    const kindWhere = query.kind ? { kind: query.kind } : {};
     const where = query.activeOnly
-      ? [
-          {
-            ...baseWhere,
-            activeFrom: LessThanOrEqual(now),
-            activeTo: MoreThanOrEqual(now),
-          },
-          {
-            ...baseWhere,
-            activeFrom: LessThanOrEqual(now),
-            activeTo: IsNull(),
-          },
-        ]
-      : baseWhere;
+      ? this.activeWhere(needsReview, now, kindWhere)
+      : { needsReview, ...kindWhere };
 
     const entities = await this.noticeRepository.find({
       where,
@@ -60,14 +46,7 @@ export class MapService {
       take: query.limit + 1,
       skip: query.offset,
     });
-    const hasMore = entities.length > query.limit;
-    const items = entities.slice(0, query.limit).map(toNoticeDto);
-    return {
-      items,
-      limit: query.limit,
-      offset: query.offset,
-      hasMore,
-    };
+    return toPaginated(entities, query.limit, query.offset, toNoticeDto);
   }
 
   // Cached: the metrics are a fan-out of ~a dozen COUNT queries and the result
@@ -176,14 +155,19 @@ export class MapService {
     return this.datasets.requireEntry(key);
   }
 
-  private activeWhere(needsReview: boolean, now: Date) {
+  // The "active now" filter as a TypeORM OR (array): activeFrom in the past and
+  // activeTo either still ahead or open-ended. `extra` merges in any additional
+  // equality filters (e.g. kind) onto both branches.
+  private activeWhere(needsReview: boolean, now: Date, extra: object = {}) {
     return [
       {
+        ...extra,
         needsReview,
         activeFrom: LessThanOrEqual(now),
         activeTo: MoreThanOrEqual(now),
       },
       {
+        ...extra,
         needsReview,
         activeFrom: LessThanOrEqual(now),
         activeTo: IsNull(),

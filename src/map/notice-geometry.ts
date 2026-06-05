@@ -1,3 +1,4 @@
+import { bbox } from '@turf/bbox';
 import { distance } from '@turf/distance';
 import { lineString, pointOnFeature, polygon } from '@turf/turf';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
@@ -8,6 +9,19 @@ type GeoBoundingCircle = { center: GeoCoordinate; radiusMetres: number };
 
 function isFinitePoint(p: { lat: number; long: number }): boolean {
   return Number.isFinite(p.lat) && Number.isFinite(p.long);
+}
+
+// GeoJSON linear rings must be closed (first position === last). Shared by the
+// serializer and the anchor logic so both close a ring the same way.
+export function isRingClosed(coords: [number, number][]): boolean {
+  if (coords.length < 2) return false;
+  const a = coords[0];
+  const b = coords[coords.length - 1];
+  return a[0] === b[0] && a[1] === b[1];
+}
+
+export function closeRing(coords: [number, number][]): [number, number][] {
+  return isRingClosed(coords) ? coords : [...coords, coords[0]];
 }
 
 function distanceMetres(a: GeoCoordinate, b: GeoCoordinate): number {
@@ -40,9 +54,7 @@ function anchorForPart(part: EntityPart): GeoCoordinate | null {
     }
     if (part.geometryType === 'polygon' && coords.length >= 3) {
       // GeoJSON rings must be closed; close the seam when the source omits it.
-      const a = coords[0];
-      const b = coords[coords.length - 1];
-      const ring = a[0] === b[0] && a[1] === b[1] ? coords : [...coords, a];
+      const ring = closeRing(coords);
       const [lon, lat] = pointOnFeature(polygon([ring])).geometry.coordinates;
       return { latitude: lat, longitude: lon };
     }
@@ -97,16 +109,10 @@ export function boundingCircle(
   }
   if (points.length === 0) return null;
 
-  let minLat = Infinity;
-  let maxLat = -Infinity;
-  let minLong = Infinity;
-  let maxLong = -Infinity;
-  for (const p of points) {
-    if (p.lat < minLat) minLat = p.lat;
-    if (p.lat > maxLat) maxLat = p.lat;
-    if (p.long < minLong) minLong = p.long;
-    if (p.long > maxLong) maxLong = p.long;
-  }
+  const [minLong, minLat, maxLong, maxLat] = bbox({
+    type: 'MultiPoint',
+    coordinates: points.map((p) => [p.long, p.lat]),
+  });
   const center: GeoCoordinate = {
     latitude: (minLat + maxLat) / 2,
     longitude: (minLong + maxLong) / 2,

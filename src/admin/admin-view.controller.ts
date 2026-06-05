@@ -35,6 +35,7 @@ import { CreateNoticeDto } from './dto/create-notice.dto';
 import { ViewLogsDto } from './dto/view-logs.dto';
 import { ViewFlaggedDto } from './dto/view-flagged.dto';
 import { GetNoticesDto } from '../map/dto/get-notices.dto';
+import { Paginated } from '../common/dto/paginated.dto';
 import { LogType } from '../scraper/log-type';
 import { NoticeKind } from '../scraper/notice-kind';
 
@@ -279,15 +280,7 @@ export class AdminViewController {
   }
 }
 
-function paginationMeta<T>(
-  page: {
-    items: T[];
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  },
-  filters: object = {},
-) {
+function paginationMeta<T>(page: Paginated<T>, filters: object = {}) {
   const pageHref = (offset: number) => {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(filters)) {

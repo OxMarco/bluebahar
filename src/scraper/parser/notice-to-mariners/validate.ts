@@ -34,7 +34,7 @@ const validDate = z
   .date()
   .refine((d) => !Number.isNaN(d.getTime()), { message: 'invalid Date' });
 
-export const ParsedNoticeSchema = z
+const ParsedNoticeSchema = z
   .object({
     kind: z.nativeEnum(NoticeKind),
     title: z.string().trim().min(1),

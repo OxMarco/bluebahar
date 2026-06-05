@@ -16,12 +16,12 @@ export interface NormalizedFeatureProperties {
   sourceUrl?: string;
 }
 
-export interface NormalizedDetail {
+interface NormalizedDetail {
   label: string;
   value: string;
 }
 
-export interface NormalizedMedia {
+interface NormalizedMedia {
   youtubeIds?: string[];
 }
 
@@ -30,7 +30,7 @@ export interface NormalizedLink {
   label?: string;
 }
 
-export interface NormalizedRating {
+interface NormalizedRating {
   value: number;
   count: number;
 }

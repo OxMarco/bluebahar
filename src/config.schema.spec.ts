@@ -1,5 +1,4 @@
-import { configValidationSchema } from './config.schema';
-import type { ValidationError } from 'joi';
+import { configSchema } from './config.schema';
 
 const validEnv = {
   DB_HOST: 'postgres',
@@ -23,19 +22,16 @@ const validEnv = {
   SENTRY_PROFILES_SAMPLE_RATE: 0.05,
 };
 
-function validate(env: Record<string, unknown>) {
-  return configValidationSchema.validate(env, { abortEarly: false });
+function errorPaths(env: Record<string, unknown>): string[] {
+  const result = configSchema.safeParse(env);
+  return result.success
+    ? []
+    : result.error.issues.map((issue) => issue.path.join('.'));
 }
 
-function errorPaths(error: ValidationError | undefined): string[] {
-  return error?.details.map((detail) => detail.path.join('.')) ?? [];
-}
-
-describe('configValidationSchema', () => {
+describe('configSchema', () => {
   it('accepts a complete production configuration', () => {
-    const result = validate(validEnv);
-
-    expect(result.error).toBeUndefined();
+    expect(configSchema.safeParse(validEnv).success).toBe(true);
   });
 
   it('requires infrastructure and application secrets', () => {
@@ -44,9 +40,7 @@ describe('configValidationSchema', () => {
     delete incomplete.OPENAI_API_KEY;
     delete incomplete.ADMIN_API_KEY;
 
-    const { error } = validate(incomplete);
-
-    expect(errorPaths(error)).toEqual(
+    expect(errorPaths(incomplete)).toEqual(
       expect.arrayContaining([
         'DB_PASSWORD',
         'OPENAI_API_KEY',
@@ -56,17 +50,17 @@ describe('configValidationSchema', () => {
   });
 
   it('rejects invalid ports, batch sizes, and sample rates', () => {
-    const { error } = validate({
-      ...validEnv,
-      DB_PORT: 70_000,
-      PORT: 70_001,
-      THROTTLE_TTL_MS: 0,
-      THROTTLE_LIMIT: 0,
-      NOTICE_SCRAPE_BATCH_SIZE: 0,
-      SENTRY_TRACES_SAMPLE_RATE: 1.5,
-    });
-
-    expect(errorPaths(error)).toEqual(
+    expect(
+      errorPaths({
+        ...validEnv,
+        DB_PORT: 70_000,
+        PORT: 70_001,
+        THROTTLE_TTL_MS: 0,
+        THROTTLE_LIMIT: 0,
+        NOTICE_SCRAPE_BATCH_SIZE: 0,
+        SENTRY_TRACES_SAMPLE_RATE: 1.5,
+      }),
+    ).toEqual(
       expect.arrayContaining([
         'DB_PORT',
         'PORT',

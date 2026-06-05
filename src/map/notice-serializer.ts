@@ -10,6 +10,7 @@ import {
 } from './dto/notice.dto';
 import {
   boundingCircle,
+  closeRing,
   representativePoint,
   representativePoints,
 } from './notice-geometry';
@@ -39,7 +40,7 @@ function partToGeometry(part: EntityGeometryPart): NoticeGeometry | null {
     case 'polygon': {
       // GeoJSON polygons require closed linear rings (first === last) with
       // at least 4 positions. Auto-close when the source omits the seam.
-      const ring = isRingClosed(coords) ? coords : [...coords, coords[0]];
+      const ring = closeRing(coords);
       if (ring.length < 4) return null;
       return {
         type: 'Polygon',
@@ -47,13 +48,6 @@ function partToGeometry(part: EntityGeometryPart): NoticeGeometry | null {
       } satisfies GeoJsonPolygon;
     }
   }
-}
-
-function isRingClosed(coords: [number, number][]): boolean {
-  if (coords.length < 2) return false;
-  const a = coords[0];
-  const b = coords[coords.length - 1];
-  return a[0] === b[0] && a[1] === b[1];
 }
 
 function partToFeature(

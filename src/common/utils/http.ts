@@ -62,13 +62,6 @@ export function fetchText(
   return fetchTextWith(impit, url, init);
 }
 
-export function fetchBuffer(
-  url: string,
-  init?: Parameters<typeof impit.fetch>[1],
-): Promise<Buffer> {
-  return fetchBufferWith(impit, url, init);
-}
-
 // Proxied variants — route through SCRAPER_PROXY_URL when configured, else
 // identical to the direct helpers. Use these for sources that block our
 // server IP (Transport Malta notice listings and PDFs).

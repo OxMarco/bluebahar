@@ -3,6 +3,7 @@
 // document-type classifier all come from here — no LLM touches the numbers.
 import path from 'node:path';
 import { PDFParse } from 'pdf-parse';
+import { DateTime } from 'luxon';
 import type { DocumentType, ResolvedPoint } from './types';
 
 const MALTA_BBOX = {
@@ -93,29 +94,9 @@ function parseClock(raw: string): { hour: number; minute: number } | null {
   return { hour, minute };
 }
 
-function timeZoneOffsetMinutes(timeZone: string, utcDate: Date): number {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).formatToParts(utcDate);
-  const values = Object.fromEntries(parts.map((p) => [p.type, p.value]));
-  const asUtc = Date.UTC(
-    Number(values.year),
-    Number(values.month) - 1,
-    Number(values.day),
-    Number(values.hour),
-    Number(values.minute),
-    Number(values.second),
-  );
-  return (asUtc - utcDate.getTime()) / 60_000;
-}
-
+// Interpret a notice's local date + clock time in Malta's timezone and return
+// the corresponding UTC instant as an ISO string. luxon resolves the DST offset
+// (including spring-forward/fall-back) for that wall-clock time.
 function localNoticeDateTimeToUtcIso(
   dateIso: string,
   clockRaw: string,
@@ -124,34 +105,31 @@ function localNoticeDateTimeToUtcIso(
   if (!clock) return null;
   const dateParts = dateIso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!dateParts) return null;
-  const year = Number(dateParts[1]);
-  const month = Number(dateParts[2]);
-  const day = Number(dateParts[3]);
-  const localAsUtc = Date.UTC(year, month - 1, day, clock.hour, clock.minute);
-  let offset = timeZoneOffsetMinutes(NOTICE_TIME_ZONE, new Date(localAsUtc));
-  let utcMs = localAsUtc - offset * 60_000;
-  const correctedOffset = timeZoneOffsetMinutes(
-    NOTICE_TIME_ZONE,
-    new Date(utcMs),
+  const local = DateTime.fromObject(
+    {
+      year: Number(dateParts[1]),
+      month: Number(dateParts[2]),
+      day: Number(dateParts[3]),
+      hour: clock.hour,
+      minute: clock.minute,
+    },
+    { zone: NOTICE_TIME_ZONE },
   );
-  if (correctedOffset !== offset) {
-    offset = correctedOffset;
-    utcMs = localAsUtc - offset * 60_000;
-  }
-  return new Date(utcMs).toISOString();
+  return local.isValid ? local.toUTC().toJSDate().toISOString() : null;
 }
 
 // A single DMM coordinate ROW: "1A 35° 49'.213 014° 27'.724" (label optional).
-const DEGREE_MARK = String.raw`[°º˚\uF0B0]`;
-const COORD_RE =
-  new RegExp(
-    String.raw`(?:\b(?<label>\d{1,3}[A-Z])\s+)?(?<latDeg>\d{2})\s*${DEGREE_MARK}\s*(?<latMin>\d{2})\s*['′]\s*\.?\s*(?<latFrac>\d{1,3})\s+(?<lonDeg>0?\d{2,3})\s*${DEGREE_MARK}\s*(?<lonMin>\d{2})\s*['′]\s*\.?\s*(?<lonFrac>\d{1,3})`,
-    'g',
-  );
+// Shared so the strict (COORD_RE) and permissive (regex-strategy GEN_ROW)
+// coordinate readers, plus the title scanner, use one degree-glyph class.
+export const DEGREE_MARK = String.raw`[°º˚\uF0B0]`;
+const COORD_RE = new RegExp(
+  String.raw`(?:\b(?<label>\d{1,3}[A-Z])\s+)?(?<latDeg>\d{2})\s*${DEGREE_MARK}\s*(?<latMin>\d{2})\s*['′]\s*\.?\s*(?<latFrac>\d{1,3})\s+(?<lonDeg>0?\d{2,3})\s*${DEGREE_MARK}\s*(?<lonMin>\d{2})\s*['′]\s*\.?\s*(?<lonFrac>\d{1,3})`,
+  'g',
+);
 const LOOSE_COORD_RE =
   /\b(?:[A-Z]\d?|\d{1,3}[A-Z])?\.?\s*(3[56])\D{1,12}([0-5]\d)(?:\D{0,4}(\d{1,3}))?\D{1,28}(0?14)\D{1,12}([0-5]\d)(?:\D{0,4}(\d{1,3}))?/g;
 
-export type RawCoord = ResolvedPoint & { raw: string; generatedLabel: boolean };
+export type RawCoord = ResolvedPoint & { raw: string };
 
 // Extract every coordinate row, in document order. The regex is the
 // ground-truth-grade number reader.
@@ -165,7 +143,6 @@ export function extractCoordinates(text: string): RawCoord[] {
       lat: parseDmm(g.latDeg, g.latMin, g.latFrac),
       lon: parseDmm(g.lonDeg, g.lonMin, g.lonFrac),
       raw: m[0].trim(),
-      generatedLabel: !g.label,
     });
   }
   return out;

@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { bbox as turfBbox } from '@turf/bbox';
+import { errorMessage } from '../src/common/utils/error-message';
 import {
   DATASETS,
   DEFAULT_DATASET_BOUNDS,
@@ -79,7 +81,7 @@ async function main() {
       results.push({
         key: dataset.key,
         status: 'failed',
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
     }
   }
@@ -114,17 +116,16 @@ function summarize(value: unknown, bounds: DatasetBounds): Summary {
     throw new Error('Expected at least one GeoJSON feature');
   }
 
-  let bbox: DatasetBounds | undefined;
   for (const [index, feature] of value.features.entries()) {
     if (!isRecord(feature) || feature.type !== 'Feature') {
       throw new Error(`Feature ${index} is not a GeoJSON Feature`);
     }
-    const featureBbox = geometryBbox(feature.geometry, bounds);
+    const featureBbox = geoJsonBbox(feature, bounds);
     if (!featureBbox) {
       throw new Error(`Feature ${index} has no valid geometry`);
     }
-    bbox = mergeBbox(bbox, featureBbox);
   }
+  const bbox = geoJsonBbox(value, bounds);
   if (!bbox) {
     throw new Error('Dataset has no valid coordinate bbox');
   }
@@ -137,66 +138,29 @@ function summarize(value: unknown, bounds: DatasetBounds): Summary {
   };
 }
 
-function geometryBbox(
-  geometry: unknown,
-  bounds: DatasetBounds,
-): DatasetBounds | undefined {
-  if (!isRecord(geometry)) return undefined;
-  if (
-    geometry.type === 'GeometryCollection' &&
-    Array.isArray(geometry.geometries)
-  ) {
-    let bbox: DatasetBounds | undefined;
-    for (const child of geometry.geometries) {
-      bbox = mergeBbox(bbox, geometryBbox(child, bounds));
-    }
-    return bbox;
-  }
-
-  const acc = {
-    minX: Number.POSITIVE_INFINITY,
-    minY: Number.POSITIVE_INFINITY,
-    maxX: Number.NEGATIVE_INFINITY,
-    maxY: Number.NEGATIVE_INFINITY,
-  };
-  visitCoordinates(geometry.coordinates, bounds, acc);
-  if (!Number.isFinite(acc.minX)) return undefined;
-  return [acc.minX, acc.minY, acc.maxX, acc.maxY];
-}
-
-function visitCoordinates(
+function geoJsonBbox(
   value: unknown,
   bounds: DatasetBounds,
-  acc: { minX: number; minY: number; maxX: number; maxY: number },
-) {
-  if (!Array.isArray(value)) return;
-  if (isFiniteNumber(value[0]) && isFiniteNumber(value[1])) {
-    if (!positionWithin([value[0], value[1]], bounds)) {
-      throw new Error('Coordinate outside configured dataset bounds');
-    }
-    acc.minX = Math.min(acc.minX, value[0]);
-    acc.minY = Math.min(acc.minY, value[1]);
-    acc.maxX = Math.max(acc.maxX, value[0]);
-    acc.maxY = Math.max(acc.maxY, value[1]);
-    return;
-  }
-  for (const child of value) {
-    visitCoordinates(child, bounds, acc);
-  }
-}
-
-function mergeBbox(
-  current: DatasetBounds | undefined,
-  next: DatasetBounds | undefined,
 ): DatasetBounds | undefined {
-  if (!next) return current;
-  if (!current) return next;
-  return [
-    Math.min(current[0], next[0]),
-    Math.min(current[1], next[1]),
-    Math.max(current[2], next[2]),
-    Math.max(current[3], next[3]),
-  ];
+  try {
+    const [minX, minY, maxX, maxY] = turfBbox(
+      value as Parameters<typeof turfBbox>[0],
+      { recompute: true },
+    );
+    const bbox: DatasetBounds = [minX, minY, maxX, maxY];
+    if (
+      bbox.some((coord) => !Number.isFinite(coord)) ||
+      bbox[0] < bounds[0] ||
+      bbox[1] < bounds[1] ||
+      bbox[2] > bounds[2] ||
+      bbox[3] > bounds[3]
+    ) {
+      return undefined;
+    }
+    return bbox;
+  } catch {
+    return undefined;
+  }
 }
 
 async function readCurrent(key: string): Promise<string | null> {
@@ -219,27 +183,11 @@ function argValue(name: string): string | undefined {
     ?.slice(prefix.length);
 }
 
-function positionWithin(
-  position: [number, number],
-  bounds: DatasetBounds,
-): boolean {
-  return (
-    position[0] >= bounds[0] &&
-    position[1] >= bounds[1] &&
-    position[0] <= bounds[2] &&
-    position[1] <= bounds[3]
-  );
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
 main().catch((err) => {
-  console.error(err instanceof Error ? err.message : String(err));
+  console.error(errorMessage(err));
   process.exitCode = 1;
 });

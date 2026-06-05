@@ -2,7 +2,9 @@
 // Independent of the extraction pipeline — this only produces links.
 
 import * as cheerio from 'cheerio';
+import { DateTime } from 'luxon';
 import { fetchTextViaProxy } from '../../../common/utils/http';
+import { errorMessage } from '../../../common/utils/error-message';
 
 export interface PdfLink {
   url: string;
@@ -30,25 +32,16 @@ function isPdfLink(url: URL): boolean {
   return false;
 }
 
-// data-expiredon is rendered as DD/MM/YYYY (or empty for never-expires).
+// data-expiredon is rendered as DD/MM/YYYY (or empty for never-expires). luxon
+// rejects impossible dates (e.g. 31/02/2026) rather than silently rolling over.
 function parseExpiry(raw: string): Date | null {
   const m = raw.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return null;
-  const day = +m[1];
-  const month = +m[2];
-  const year = +m[3];
-  if (month < 1 || month > 12) return null;
-  if (day < 1 || day > 31) return null;
-  const d = new Date(Date.UTC(year, month - 1, day));
-  // Reject silent JS rollover (e.g. 31/02/2026 → 03/03/2026).
-  if (
-    d.getUTCFullYear() !== year ||
-    d.getUTCMonth() !== month - 1 ||
-    d.getUTCDate() !== day
-  ) {
-    return null;
-  }
-  return d;
+  const dt = DateTime.fromObject(
+    { day: +m[1], month: +m[2], year: +m[3] },
+    { zone: 'utc' },
+  );
+  return dt.isValid ? dt.toJSDate() : null;
 }
 
 function isActive(expiredOnAttr: string | undefined, now: Date): boolean {
@@ -128,11 +121,7 @@ export async function listNoticeLinks(): Promise<PdfLink[]> {
     if (result.status === 'fulfilled') {
       links.push(...result.value);
     } else {
-      const reason =
-        result.reason instanceof Error
-          ? result.reason.message
-          : String(result.reason);
-      failures.push(`${SOURCES[i]}: ${reason}`);
+      failures.push(`${SOURCES[i]}: ${errorMessage(result.reason)}`);
     }
   });
 

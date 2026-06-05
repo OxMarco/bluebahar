@@ -9,7 +9,7 @@ import { TerminusModule } from '@nestjs/terminus';
 import { CacheModule } from '@nestjs/cache-manager';
 import { createKeyv } from '@keyv/redis';
 import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
-import { configValidationSchema } from './config.schema';
+import { validateConfig } from './config.schema';
 import { ScraperModule } from './scraper/scraper.module';
 import { MapModule } from './map/map.module';
 import { AppController } from './app.controller';
@@ -23,8 +23,7 @@ import { AdminModule } from './admin/admin.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      validationSchema: configValidationSchema,
-      validationOptions: { abortEarly: false },
+      validate: validateConfig,
     }),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],

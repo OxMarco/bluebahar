@@ -5,6 +5,7 @@ import {
   type HealthIndicatorResult,
 } from '@nestjs/terminus';
 import { Queue } from 'bullmq';
+import { errorMessage } from '../utils/error-message';
 
 @Injectable()
 export class RedisHealthIndicator {
@@ -24,9 +25,7 @@ export class RedisHealthIndicator {
         ? session.up()
         : session.down({ message: `Unexpected PING reply: ${reply}` });
     } catch (err) {
-      return session.down({
-        message: err instanceof Error ? err.message : String(err),
-      });
+      return session.down({ message: errorMessage(err) });
     }
   }
 }

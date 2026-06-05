@@ -4,6 +4,7 @@ import {
   type HealthIndicatorResult,
 } from '@nestjs/terminus';
 import { proxiedImpit } from '../utils/http';
+import { errorMessage } from '../utils/error-message';
 
 @Injectable()
 export class ImpitHealthIndicator {
@@ -23,9 +24,7 @@ export class ImpitHealthIndicator {
       }
       return session.up({ statusCode: res.status });
     } catch (err) {
-      return session.down({
-        message: err instanceof Error ? err.message : String(err),
-      });
+      return session.down({ message: errorMessage(err) });
     }
   }
 }

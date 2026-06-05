@@ -154,8 +154,6 @@ describe('adaptToParsedNotice', () => {
       recommended_action: '',
       affected_locations: [],
       validity: '',
-      model: 'gpt-5.5',
-      latency_ms: 1,
       ...over,
     });
 
@@ -223,6 +221,62 @@ describe('adaptToParsedNotice', () => {
       expect(result.areas).toHaveLength(0);
       expect(result.needsReview).toBe(false);
       expect(result.reviewReasons).toEqual([]);
+    });
+
+    it('content-first fallback: a chart correction carrying a hazard -> alert', () => {
+      const result = adaptToParsedNotice(
+        input({
+          enrichment: null,
+          extraction: extraction({
+            document_type: 'chart_correction',
+            areas: [area({ hazard_type: 'cable_laid' })],
+          }),
+          featureCollection: noGeometry,
+        }),
+      );
+      expect(result.kind).toBe(NoticeKind.ALERT);
+    });
+
+    it('content-first fallback: a chart correction with a restriction -> alert', () => {
+      const result = adaptToParsedNotice(
+        input({
+          enrichment: null,
+          extraction: extraction({
+            document_type: 'chart_correction',
+            areas: [area({ restrictions: ['Keep clear of the foul ground.'] })],
+          }),
+          featureCollection: noGeometry,
+        }),
+      );
+      expect(result.kind).toBe(NoticeKind.ALERT);
+    });
+
+    it('content-first fallback: a chart correction with no hazard -> info', () => {
+      const result = adaptToParsedNotice(
+        input({
+          enrichment: null,
+          extraction: extraction({
+            document_type: 'chart_correction',
+            areas: [area({ hazard_type: null, restrictions: [] })],
+          }),
+          featureCollection: noGeometry,
+        }),
+      );
+      expect(result.kind).toBe(NoticeKind.INFO);
+    });
+
+    it("ignores an 'unknown' hazard_type as non-hazard content", () => {
+      const result = adaptToParsedNotice(
+        input({
+          enrichment: null,
+          extraction: extraction({
+            document_type: 'chart_correction',
+            areas: [area({ hazard_type: 'unknown', restrictions: [] })],
+          }),
+          featureCollection: noGeometry,
+        }),
+      );
+      expect(result.kind).toBe(NoticeKind.INFO);
     });
   });
 
@@ -326,8 +380,6 @@ describe('adaptToParsedNotice', () => {
         recommended_action: 'Keep 4 NM off the coast.',
         affected_locations: ['Pembroke Ranges'],
         validity: '8 June 2026',
-        model: 'gpt-5.5',
-        latency_ms: 10,
       };
       const result = adaptToParsedNotice(input({ enrichment }));
       expect(result.description).toBe(

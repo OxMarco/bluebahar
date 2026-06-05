@@ -1,8 +1,4 @@
 import { Logs } from '../../scraper/entities/logs.entity';
+import { Paginated } from '../../common/dto/paginated.dto';
 
-export class PaginatedLogsDto {
-  items!: Logs[];
-  limit!: number;
-  offset!: number;
-  hasMore!: boolean;
-}
+export class PaginatedLogsDto extends Paginated<Logs> {}

@@ -12,6 +12,7 @@ import {
   parseDmm,
   inBbox,
   resolveLabels,
+  DEGREE_MARK,
   type RawCoord,
 } from './core';
 import { distanceKm } from './spatial';
@@ -217,8 +218,10 @@ type PosCoord = {
   raw: string;
 };
 
-const GEN_ROW =
-  /(?:\b([A-Z]\d?|\d{1,3}[A-Z])\.?\s+)?(\d{2,3})\s*[°º˚\uF0B0]\s*(\d{2})\s*['′]\s*\.?\s*(\d{1,3})\s+(0?\d{2,3})\s*[°º˚\uF0B0]\s*(\d{2})\s*['′]\s*\.?\s*(\d{1,3})/g;
+const GEN_ROW = new RegExp(
+  String.raw`(?:\b([A-Z]\d?|\d{1,3}[A-Z])\.?\s+)?(\d{2,3})\s*${DEGREE_MARK}\s*(\d{2})\s*['\u2032]\s*\.?\s*(\d{1,3})\s+(0?\d{2,3})\s*${DEGREE_MARK}\s*(\d{2})\s*['\u2032]\s*\.?\s*(\d{1,3})`,
+  'g',
+);
 
 function scanCoords(text: string): {
   coords: PosCoord[];
@@ -258,7 +261,10 @@ function titleNear(text: string, idx: number): string | null {
     const l = lines[i];
     if (/latitude|longitude|^point\b|^position\b|^\(?[NE]\)?$/i.test(l))
       continue;
-    if (/[A-Za-z]{4,}/.test(l) && !/^\d{1,3}\s*[°º˚\uF0B0]/.test(l))
+    if (
+      /[A-Za-z]{4,}/.test(l) &&
+      !new RegExp(String.raw`^\d{1,3}\s*${DEGREE_MARK}`).test(l)
+    )
       return l.replace(/\s*[-–]\s*$/, '').slice(0, 90);
   }
   return null;
@@ -517,7 +523,6 @@ export function runRegex(
   pages: number,
   sourceFile: string,
 ): RegexResult {
-  const t0 = Date.now();
   const meta = extractMetadata(text);
   const coords = extractCoordinates(text);
   const byLabel = new Map(coords.map((c) => [c.label, c]));
@@ -563,6 +568,6 @@ export function runRegex(
   };
   return {
     extraction,
-    meta: { latency_ms: Date.now() - t0, model: null, notes },
+    meta: { notes },
   };
 }

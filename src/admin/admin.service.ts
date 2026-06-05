@@ -12,6 +12,7 @@ import { ViewLogsDto } from './dto/view-logs.dto';
 import { ViewFlaggedDto } from './dto/view-flagged.dto';
 import { PaginatedLogsDto } from './dto/paginated-logs.dto';
 import { PaginatedFlaggedNoticesDto } from './dto/flagged-notice.dto';
+import { toPaginated } from '../common/dto/paginated.dto';
 
 @Injectable()
 export class AdminService {
@@ -34,13 +35,7 @@ export class AdminService {
       take: limit + 1,
       skip: offset,
     });
-    const hasMore = entities.length > limit;
-    return {
-      items: entities.slice(0, limit),
-      limit,
-      offset,
-      hasMore,
-    };
+    return toPaginated(entities, limit, offset);
   }
 
   async viewFlaggedNotices(
@@ -53,15 +48,10 @@ export class AdminService {
       take: limit + 1,
       skip: offset,
     });
-    const hasMore = entities.length > limit;
-    return {
-      items: entities
-        .slice(0, limit)
-        .map((entity) => ({ ...toNoticeDto(entity), reports: entity.reports })),
-      limit,
-      offset,
-      hasMore,
-    };
+    return toPaginated(entities, limit, offset, (entity) => ({
+      ...toNoticeDto(entity),
+      reports: entity.reports,
+    }));
   }
 
   async viewNoticesInReview(query: GetNoticesDto) {

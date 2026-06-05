@@ -1,15 +1,9 @@
-import { Transform, Type } from 'class-transformer';
-import {
-  IsBoolean,
-  IsEnum,
-  IsInt,
-  IsOptional,
-  Max,
-  Min,
-} from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
 import { NoticeKind } from '../../scraper/notice-kind';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 
-export class GetNoticesDto {
+export class GetNoticesDto extends PaginationQueryDto {
   @IsOptional()
   @IsEnum(NoticeKind)
   kind?: NoticeKind;
@@ -23,17 +17,4 @@ export class GetNoticesDto {
   })
   @IsBoolean()
   activeOnly?: boolean = true;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(500)
-  limit: number = 100;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  offset: number = 0;
 }

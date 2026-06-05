@@ -5,18 +5,19 @@
 // coastline-closed zones all arrive here already realised as their polygon
 // rings, so they map to `geometryType: 'polygon'` with no loss for rendering.
 import type { FeatureCollection, Geometry, Position } from 'geojson';
+import { DateTime } from 'luxon';
 import { NoticeKind } from '../../notice-kind';
 import type { DocumentType, NoticeExtraction } from './types';
 import type { Enrichment } from './enrich';
 
-export interface NoticePoint {
+interface NoticePoint {
   lat: number;
   long: number;
 }
 
-export type NoticeGeometryType = 'point' | 'line' | 'polygon';
+type NoticeGeometryType = 'point' | 'line' | 'polygon';
 
-export interface NoticeGeometryPart {
+interface NoticeGeometryPart {
   label: string;
   geometryType: NoticeGeometryType;
   points: NoticePoint[];
@@ -131,11 +132,12 @@ function usableTitle(raw: string | undefined | null): string | null {
 
 function parseDate(iso: string | null, endOfDay = false): Date | null {
   if (!iso) return null;
-  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(iso)
-    ? `${iso}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`
-    : iso;
-  const d = new Date(normalized);
-  return Number.isNaN(d.getTime()) ? null : d;
+  const dt = DateTime.fromISO(iso, { zone: 'utc' });
+  if (!dt.isValid) return null;
+  // Date-only values (YYYY-MM-DD) anchor to the start or end of that UTC day;
+  // full timestamps are taken as-is.
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
+  return (dateOnly && endOfDay ? dt.endOf('day') : dt).toJSDate();
 }
 
 // End of a notice's validity window — identical to the activeTo stored on the
@@ -194,16 +196,29 @@ function buildDescription(
   return ruleBasedDescription(x);
 }
 
-// Alert vs info is SEMANTIC, not geometric. An alert is a hazard/restriction a
-// mariner must act on; info is administrative. EITHER can be text-only or carry
-// plottable areas — so we never infer the kind from `areas.length`. The AI
-// enrichment already triages exactly this (enrich.ts NoticeCategory); when it is
-// off, failed, or undecided ('other'), fall back to the rule-based document
-// type, which itself defaults to info for anything not a restriction/extension.
+// Alert vs info is SEMANTIC, not geometric. An alert is an area to avoid or
+// navigate with care (anchor lost, cable laid, buoy, wreck, fireworks, firing
+// range, prohibited/restricted area); info is administrative or non-hazard
+// navigational info (navigation lights, VHF/radio channels, harbour layout,
+// amendments, cancellations). EITHER can be text-only or carry plottable areas —
+// so we never infer the kind from `areas.length`. The AI enrichment triages
+// exactly this (enrich.ts NoticeCategory); when it is off, failed, or undecided
+// ('other'), fall back to a content-first rule: a notice is an alert if it
+// carries a real hazard or restriction, OR if its document type is inherently a
+// restriction/extension. The document type alone never demotes a hazard-bearing
+// notice to info — that is the bug that mislabelled chart corrections.
 const ALERT_DOC_TYPES: ReadonlySet<DocumentType> = new Set<DocumentType>([
   'new_restriction',
   'time_extension',
 ]);
+
+function hasHazardContent(extraction: NoticeExtraction): boolean {
+  return extraction.areas.some(
+    (a) =>
+      (Boolean(a.hazard_type) && a.hazard_type !== 'unknown') ||
+      a.restrictions.some(Boolean),
+  );
+}
 
 function classifyKind(
   extraction: NoticeExtraction,
@@ -212,7 +227,8 @@ function classifyKind(
   if (enrichment && enrichment.category !== 'other') {
     return enrichment.category === 'alert' ? NoticeKind.ALERT : NoticeKind.INFO;
   }
-  return ALERT_DOC_TYPES.has(extraction.document_type)
+  return ALERT_DOC_TYPES.has(extraction.document_type) ||
+    hasHazardContent(extraction)
     ? NoticeKind.ALERT
     : NoticeKind.INFO;
 }
