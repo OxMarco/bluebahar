@@ -155,6 +155,55 @@ C 35° 58'.290 014° 32'.190
     );
   });
 
+  it('plots a non-cable chart correction (foul area) as an auto-published point', () => {
+    // A "Chart Correction" that is not a cable Insert/Delete/Amended block still
+    // states a position. It must fall through to the generic extractor instead
+    // of yielding no geometry — and a single stated position is unambiguous, so
+    // it publishes without manual review.
+    const notice = pipelineText(`
+PORTS AND YACHTING DIRECTORATE
+NOTICE TO MARINERS No 80 of 2026
+3 June 2026
+Chart Correction - Foul area (Lost anchor and chain)
+Mariners are notified that an anchor and chain have been lost within Bunkering Area 6.
+Charts are to show a foul area with a 500m radius at the stated position.
+Position Latitude (N) Longitude (E)
+35° 57'.600 014° 29'.400
+`);
+
+    expect(notice.areas).toHaveLength(1);
+    expect(notice.areas[0].geometryType).toBe('point');
+    expect(notice.needsReview).toBe(false);
+    expect(notice.reviewReasons).not.toContain(
+      'generic_extraction_verify_geometry',
+    );
+    // The "500m radius" becomes the notice's berth distance, which the app draws
+    // as a ring around the point.
+    expect(notice.distance).toBe(500);
+  });
+
+  it('still flags a multi-point chart correction as inferred geometry', () => {
+    // A chart correction whose positions get joined into a polygon is a guess,
+    // so it stays in the review queue even though it now extracts geometry.
+    const notice = pipelineText(`
+PORTS AND YACHTING DIRECTORATE
+NOTICE TO MARINERS No 81 of 2026
+3 June 2026
+Chart Correction - New conservation area
+Mariners are notified of a new conservation area at the stated positions.
+Position Latitude (N) Longitude (E)
+A 35° 55'.540 014° 28'.320
+B 35° 59'.460 014° 27'.150
+C 35° 58'.290 014° 32'.190
+`);
+
+    expect(notice.areas.length).toBeGreaterThan(0);
+    expect(notice.needsReview).toBe(true);
+    expect(notice.reviewReasons).toContain(
+      'generic_extraction_verify_geometry',
+    );
+  });
+
   it('flags coordinates dropped by generic scanning as outside Malta bounds', () => {
     const notice = pipelineText(`
 PORTS AND YACHTING DIRECTORATE

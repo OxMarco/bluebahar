@@ -308,6 +308,9 @@ export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
     publishedAt,
     activeFrom,
     ...(activeTo ? { activeTo } : {}),
+    ...(extraction.safety_distance_m
+      ? { distance: extraction.safety_distance_m }
+      : {}),
     areas,
     needsReview: reviewReasons.length > 0,
     reviewReasons,

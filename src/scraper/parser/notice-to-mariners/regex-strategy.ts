@@ -374,8 +374,9 @@ function genericAreas(
   }
 
   // C) Catch-all: cluster coordinate rows into areas, splitting where descriptive
-  //    prose sits between two rows. Flagged for review.
-  notes.push('generic_extraction_verify_geometry');
+  //    prose sits between two rows. A lone coordinate is plotted as a Point
+  //    exactly where the notice states it (no inference, so it needs no review);
+  //    only the multi-point shapes we *join* here (lines/polygons) are flagged.
   const groups: PosCoord[][] = [];
   let cur: PosCoord[] = [];
   for (let i = 0; i < coords.length; i++) {
@@ -395,8 +396,8 @@ function genericAreas(
 
   const cable = /cable/i.test(text);
   const coastline = /intermediate coastline|the\s+coastline/i.test(text);
-  return groups.map((g, i) => {
-    const kind: GeometryKind = cable
+  const kindFor = (g: PosCoord[]): GeometryKind =>
+    cable
       ? 'linestring'
       : coastline && g.length >= 2
         ? 'polygon_coastline'
@@ -405,6 +406,14 @@ function genericAreas(
           : g.length === 2
             ? 'linestring'
             : 'point';
+  // Only the inferred multi-point shapes need a human to verify the geometry; a
+  // single coordinate is unambiguous, so a notice that yields only Points is not
+  // flagged and stays public.
+  if (groups.some((g) => kindFor(g) !== 'point'))
+    notes.push('generic_extraction_verify_geometry');
+  return groups.map((g, i) => {
+    const kind = kindFor(g);
+    const guessed = kind !== 'point';
     const base = title ?? titleNear(text, g[0].idx) ?? 'Area';
     return {
       area_id: `${notice}-area-${i + 1}`,
@@ -422,7 +431,7 @@ function genericAreas(
       })),
       radius_nm: null,
       buffer_m: null,
-      restrictions: ['generic extraction — verify geometry'],
+      restrictions: guessed ? ['generic extraction — verify geometry'] : [],
     };
   });
 }
@@ -436,8 +445,14 @@ function buildAreas(
   title: string | null,
   notes: string[],
 ): Area[] {
-  if (docType === 'chart_correction')
-    return chartCorrectionAreas(text, coords, notice);
+  if (docType === 'chart_correction') {
+    const cableAreas = chartCorrectionAreas(text, coords, notice);
+    if (cableAreas.length) return cableAreas;
+    // A chart correction that isn't a cable Insert/Delete/Amended block — a foul
+    // area, wreck, buoy, navigational light, pontoon or coastline change — still
+    // states a position. Fall through to the generic extractor the other notice
+    // types use so the notice plots, instead of silently yielding no geometry.
+  }
 
   const sections = extractChartSections(text);
   if (sections.length) {
@@ -475,6 +490,21 @@ function buildAreas(
   if (generic.length) return generic;
 
   return []; // genuinely no plottable coordinates
+}
+
+// A stated safety berth in metres, e.g. "a foul area with a 500m radius" or
+// "radius of 500 metres". Only metre radii are taken: a radius in NM is already
+// realised as a circle polygon by geometry.ts, so reusing it as a berth would
+// double-draw. The cliff-buffer phrasing ("minimum distance of X m from the
+// cliff") has no "radius" and so never matches here.
+const METRE_RADIUS_RE =
+  /radius\s+of\s+(\d+(?:\.\d+)?)\s*(?:m|metres?|meters?)\b|(\d+(?:\.\d+)?)\s*(?:m|metres?|meters?)\s+radius\b/i;
+
+function extractSafetyDistanceM(text: string): number | null {
+  const m = text.match(METRE_RADIUS_RE);
+  if (!m) return null;
+  const value = Number(m[1] ?? m[2]);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }
 
 export type RegexResult = { extraction: NoticeExtraction; meta: StrategyMeta };
@@ -524,6 +554,7 @@ export function runRegex(
     referenced_notices: meta.referenced_notices,
     charts_affected: meta.charts_affected,
     areas,
+    safety_distance_m: extractSafetyDistanceM(text),
   };
   return {
     extraction,

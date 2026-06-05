@@ -63,6 +63,11 @@ export type NoticeExtraction = {
   referenced_notices: string[]; // e.g. ["09/2023"]
   charts_affected: string[];
   areas: Area[];
+  // Stated safety berth in metres (e.g. "a foul area with a 500m radius"). The
+  // app draws it as a ring around each point part. Only metre radii are taken: a
+  // radius given in NM is already realised as a circle polygon by geometry.ts,
+  // so reusing it as a berth would double-draw. Optional/absent → no berth.
+  safety_distance_m?: number | null;
 };
 
 // Strategy metadata: latency and free-form notes (coord counts, fallbacks).
