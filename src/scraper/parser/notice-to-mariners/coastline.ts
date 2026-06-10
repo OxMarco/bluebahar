@@ -13,7 +13,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { distance as turfDistance } from '@turf/turf';
+import { distance as turfDistance } from '@turf/distance';
 import type { GeoJSON, Geometry, Position } from 'geojson';
 
 // Vendored, high-resolution island coastline (Malta, Gozo, Comino, Cominotto,
@@ -22,12 +22,13 @@ import type { GeoJSON, Geometry, Position } from 'geojson';
 // so __dirname/data resolves both under ts-jest (src) and the built dist tree.
 const DATA_DIR = path.join(__dirname, 'data');
 const COASTLINE = path.join(DATA_DIR, 'malta-coastline.geojson');
+// Vendored copy of data/datasets/maltese-waters-contour.geojson: resolving
+// against __dirname (not process.cwd()) keeps the file findable regardless of
+// the launch directory — a cwd-relative miss would silently disable the
+// outside-Maltese-waters review flag.
 const WATERS = path.join(DATA_DIR, 'maltese-waters-contour.geojson');
 const DEFAULT_FILE = fs.existsSync(COASTLINE) ? COASTLINE : WATERS;
-const DEFAULT_WATERS_FILE = path.resolve(
-  process.cwd(),
-  'data/datasets/maltese-waters-contour.geojson',
-);
+const DEFAULT_WATERS_FILE = WATERS;
 
 export type LngLat = [number, number]; // [lon, lat]
 
@@ -73,13 +74,22 @@ function polygonRingsFrom(file: string): LngLat[][][] {
 }
 
 // Memoized polygon-ring loader: resolves a file lazily (so env overrides apply),
-// caches the parsed rings, and caches the file-missing case as [] too.
+// caches the parsed rings, and caches the file-missing case as [] too. A
+// missing file silently disables the checks built on these polygons, so warn
+// once rather than fail.
 function makePolygonLoader(resolveFile: () => string): () => LngLat[][][] {
   let cache: LngLat[][][] | null | undefined;
   return () => {
     if (cache !== undefined) return cache ?? [];
     const file = resolveFile();
-    cache = fs.existsSync(file) ? polygonRingsFrom(file) : null;
+    if (fs.existsSync(file)) {
+      cache = polygonRingsFrom(file);
+    } else {
+      cache = null;
+      console.warn(
+        `coastline: polygon file missing at ${file} — dependent geometry checks are disabled`,
+      );
+    }
     return cache ?? [];
   };
 }
@@ -290,8 +300,12 @@ export function closeRing(open: LngLat[]): ClosureResult {
   if (dist(g.nodes[na], last) > 3 || dist(g.nodes[nb], first) > 3)
     return straight();
 
+  // A single-node path is legitimate: when the two open ends sit metres apart
+  // in the same cove they snap to the SAME coastline vertex, and stitching
+  // that one vertex in still closes the ring as a valid polygon (rejecting it
+  // used to degenerate tiny two-point coves into bare lines).
   const coastPath = shortestPath(g, na, nb);
-  if (!coastPath || coastPath.length < 2) return straight();
+  if (!coastPath || coastPath.length < 1) return straight();
 
   const ring = [...open, ...coastPath, open[0]];
   return {

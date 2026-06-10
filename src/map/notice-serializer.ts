@@ -11,7 +11,7 @@ import {
 import {
   boundingCircle,
   closeRing,
-  representativePoint,
+  isFinitePoint,
   representativePoints,
 } from './notice-geometry';
 
@@ -22,8 +22,11 @@ function pointToCoord(p: { lat: number; long: number }): [number, number] {
 }
 
 function partToGeometry(part: EntityGeometryPart): NoticeGeometry | null {
-  if (part.points.length === 0) return null;
-  const coords = part.points.map(pointToCoord);
+  // Drop non-finite coordinates before the per-type length checks, mirroring
+  // notice-geometry's anchor logic — one NaN/null vertex would otherwise emit
+  // GeoJSON that Mapbox GL rejects, blanking the whole source.
+  const coords = part.points.filter(isFinitePoint).map(pointToCoord);
+  if (coords.length === 0) return null;
 
   switch (part.geometryType) {
     case 'point':
@@ -81,6 +84,8 @@ function buildFeatureCollection(
 }
 
 export function toNoticeDto(entity: NoticeToMariners): NoticeDto {
+  const anchors = representativePoints(entity);
+
   return {
     id: entity.id,
     kind: entity.kind,
@@ -93,8 +98,8 @@ export function toNoticeDto(entity: NoticeToMariners): NoticeDto {
     distance: entity.distance ?? null,
     reviewReasons: entity.reviewReasons ?? [],
     geometry: buildFeatureCollection(entity),
-    representativePoint: representativePoint(entity),
-    representativePoints: representativePoints(entity),
+    representativePoint: anchors[0] ?? null,
+    representativePoints: anchors,
     boundingCircle: boundingCircle(entity),
   };
 }

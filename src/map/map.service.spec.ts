@@ -37,9 +37,26 @@ function makeNotice(
   return notice;
 }
 
+// Chainable query-builder stub whose terminal getRawMany resolves to `rows`.
+function rawQueryBuilder(rows: unknown[]) {
+  const qb: Record<string, unknown> = {};
+  for (const method of [
+    'select',
+    'addSelect',
+    'groupBy',
+    'addGroupBy',
+    'where',
+    'andWhere',
+  ]) {
+    qb[method] = jest.fn(() => qb);
+  }
+  qb.getRawMany = jest.fn().mockResolvedValue(rows);
+  return qb;
+}
+
 describe('MapService', () => {
   let find: jest.MockedFunction<Repository<NoticeToMariners>['find']>;
-  let count: jest.MockedFunction<Repository<NoticeToMariners>['count']>;
+  let createQueryBuilder: jest.Mock;
   let increment: jest.MockedFunction<Repository<NoticeToMariners>['increment']>;
   let list: jest.MockedFunction<DatasetCatalogService['list']>;
   let requireEntry: jest.MockedFunction<DatasetCatalogService['requireEntry']>;
@@ -49,9 +66,7 @@ describe('MapService', () => {
     find = jest.fn() as jest.MockedFunction<
       Repository<NoticeToMariners>['find']
     >;
-    count = jest.fn() as jest.MockedFunction<
-      Repository<NoticeToMariners>['count']
-    >;
+    createQueryBuilder = jest.fn();
     increment = jest.fn() as jest.MockedFunction<
       Repository<NoticeToMariners>['increment']
     >;
@@ -67,7 +82,11 @@ describe('MapService', () => {
     } as unknown as Cache;
 
     service = new MapService(
-      { find, count, increment } as unknown as Repository<NoticeToMariners>,
+      {
+        find,
+        createQueryBuilder,
+        increment,
+      } as unknown as Repository<NoticeToMariners>,
       { list, requireEntry } as unknown as DatasetCatalogService,
       cache,
     );
@@ -176,19 +195,20 @@ describe('MapService', () => {
     expect(result.hasMore).toBe(true);
   });
 
-  it('returns notice review and visibility metrics', async () => {
-    count
-      .mockResolvedValueOnce(12)
-      .mockResolvedValueOnce(9)
-      .mockResolvedValueOnce(3)
-      .mockResolvedValueOnce(4)
-      .mockResolvedValueOnce(2)
-      .mockResolvedValueOnce(6)
-      .mockResolvedValueOnce(5)
-      .mockResolvedValueOnce(1)
-      .mockResolvedValueOnce(2)
-      .mockResolvedValueOnce(1)
-      .mockResolvedValueOnce(1);
+  it('returns notice review and visibility metrics from two grouped queries', async () => {
+    const kindRows = [
+      { kind: NoticeKind.ALERT, needsReview: false, count: '5' },
+      { kind: NoticeKind.ALERT, needsReview: true, count: '1' },
+      { kind: NoticeKind.INFO, needsReview: false, count: '4' },
+      { kind: NoticeKind.INFO, needsReview: true, count: '2' },
+    ];
+    const activeRows = [
+      { needsReview: false, count: '4' },
+      { needsReview: true, count: '2' },
+    ];
+    createQueryBuilder
+      .mockReturnValueOnce(rawQueryBuilder(kindRows))
+      .mockReturnValueOnce(rawQueryBuilder(activeRows));
 
     const result = await service.getNoticeMetrics();
 
@@ -205,12 +225,12 @@ describe('MapService', () => {
       { kind: NoticeKind.ALERT, total: 6, publicCount: 5, needsReviewCount: 1 },
       {
         kind: NoticeKind.INFO,
-        total: 2,
-        publicCount: 1,
-        needsReviewCount: 1,
+        total: 6,
+        publicCount: 4,
+        needsReviewCount: 2,
       },
     ]);
-    expect(count).toHaveBeenCalledTimes(11);
+    expect(createQueryBuilder).toHaveBeenCalledTimes(2);
   });
 
   it('atomically increments the report counter', async () => {

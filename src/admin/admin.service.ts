@@ -44,7 +44,9 @@ export class AdminService {
     const { minReports, limit, offset } = query;
     const entities = await this.noticeRepository.find({
       where: { reports: MoreThanOrEqual(minReports) },
-      order: { reports: 'DESC' },
+      // createdAt tiebreaker keeps offset pagination stable when many rows
+      // share a report count.
+      order: { reports: 'DESC', createdAt: 'DESC' },
       take: limit + 1,
       skip: offset,
     });
@@ -61,27 +63,24 @@ export class AdminService {
   // Clears the extraction review flag, making the notice public. This is
   // independent of user reports — use dismissReports to deal with those.
   async approveNtM(id: string) {
-    const notice = await this.requireNotice(id);
-    notice.needsReview = false;
-    notice.reviewReasons = [];
-    await this.noticeRepository.save(notice);
+    const result = await this.noticeRepository.update(id, {
+      needsReview: false,
+      reviewReasons: [],
+    });
+    this.assertNoticeAffected(result, id);
   }
 
   // Resets the crowd-sourced report counter (e.g. after confirming the notice
   // is still accurate). Distinct from approveNtM, which clears the extraction
   // review flag.
   async dismissReports(id: string) {
-    const notice = await this.requireNotice(id);
-    notice.reports = 0;
-    await this.noticeRepository.save(notice);
+    const result = await this.noticeRepository.update(id, { reports: 0 });
+    this.assertNoticeAffected(result, id);
   }
 
   async rejectNtM(id: string) {
     const result = await this.noticeRepository.delete(id);
-    if (!result.affected)
-      throw new NotFoundException({
-        error: `notice to mariners with id ${id} not found`,
-      });
+    this.assertNoticeAffected(result, id);
   }
 
   async addNtm(dto: CreateNoticeDto) {
@@ -98,12 +97,14 @@ export class AdminService {
     return saved;
   }
 
-  private async requireNotice(id: string): Promise<NoticeToMariners> {
-    const notice = await this.noticeRepository.findOneBy({ id });
-    if (!notice)
+  private assertNoticeAffected(
+    result: { affected?: number | null },
+    id: string,
+  ) {
+    if (!result.affected) {
       throw new NotFoundException({
         error: `notice to mariners with id ${id} not found`,
       });
-    return notice;
+    }
   }
 }

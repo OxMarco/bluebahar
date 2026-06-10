@@ -63,7 +63,9 @@ const SYSTEM = [
   'Base every field strictly on the notice text provided.',
 ].join(' ');
 
-const ENRICH_MODEL = (): string =>
+// Fallback chain for standalone (CLI/fixture) runs; the production processor
+// passes the model explicitly from the validated config schema.
+const DEFAULT_ENRICH_MODEL = (): string =>
   process.env.ENRICH_MODEL || process.env.OPENAI_MODEL || 'gpt-5.5';
 
 // Compact context: the rule-based extraction + the notice text
@@ -88,22 +90,29 @@ export async function enrichNotice(
   client: OpenAI,
   text: string,
   extraction: NoticeExtraction,
+  model?: string,
 ): Promise<Enrichment> {
-  const response = await client.responses.create({
-    model: ENRICH_MODEL(),
-    input: [
-      { role: 'system', content: SYSTEM },
-      { role: 'user', content: buildContext(text, extraction) },
-    ],
-    text: {
-      format: {
-        type: 'json_schema',
-        name: 'ntm_enrichment',
-        strict: true,
-        schema: ENRICH_SCHEMA,
+  const response = await client.responses.create(
+    {
+      model: model || DEFAULT_ENRICH_MODEL(),
+      input: [
+        { role: 'system', content: SYSTEM },
+        { role: 'user', content: buildContext(text, extraction) },
+      ],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'ntm_enrichment',
+          strict: true,
+          schema: ENRICH_SCHEMA,
+        },
       },
     },
-  });
+    // The worker runs with concurrency 1, so a hung call (SDK default timeout
+    // is 10 minutes) would stall the whole queue. Enrichment is best-effort;
+    // fail fast and let the caller fall back to the rule-based description.
+    { timeout: 60_000, maxRetries: 1 },
+  );
 
   const jsonText = response.output_text;
   if (!jsonText) throw new Error('empty enrichment output');

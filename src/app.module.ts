@@ -89,9 +89,11 @@ import { AdminModule } from './admin/admin.module';
     AdminModule,
   ],
   providers: [
-    // Sentry filter is registered first so it captures errors before other
-    // filters respond. TypeOrmNotFoundExceptionFilter is @Catch(EntityNotFoundError)
-    // and still wins for that specific type — Nest dispatches to the most specific match.
+    // Nest REVERSES this list before dispatch and uses the first @Catch match,
+    // so the effective order is TypeOrmNotFoundExceptionFilter ->
+    // ApiExceptionFilter -> SentryGlobalFilter. The Sentry filter therefore
+    // only sees non-HttpException errors; ApiExceptionFilter reports its own
+    // 5xx to Sentry. Don't reorder without rechecking both.
     { provide: APP_FILTER, useClass: SentryGlobalFilter },
     { provide: APP_FILTER, useClass: ApiExceptionFilter },
     { provide: APP_FILTER, useClass: TypeOrmNotFoundExceptionFilter },

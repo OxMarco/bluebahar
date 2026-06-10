@@ -6,11 +6,18 @@ import { PDFParse } from 'pdf-parse';
 import { DateTime } from 'luxon';
 import type { DocumentType, ResolvedPoint } from './types';
 
+// Generous sanity gate for "is this coordinate anywhere near Malta": it spans
+// the vendored maltese-waters contour (35.37–36.50 N, 13.67–15.09 E) plus the
+// AFM offshore exercise areas, NOT just the islands. Genuine notices place
+// geometry well off the coast (foul areas ESE of Malta, LM-D05 firing areas to
+// the south), and a tight box silently dropped them. Precise containment is
+// checked downstream against the waters polygon, which flags — not drops — the
+// outliers for review.
 const MALTA_BBOX = {
-  minLat: 35.6,
-  maxLat: 36.25,
-  minLon: 14.0,
-  maxLon: 14.8,
+  minLat: 35.3,
+  maxLat: 36.55,
+  minLon: 13.6,
+  maxLon: 15.1,
 };
 
 const MONTHS: Record<string, string> = {
@@ -121,9 +128,18 @@ function localNoticeDateTimeToUtcIso(
 // A single DMM coordinate ROW: "1A 35° 49'.213 014° 27'.724" (label optional).
 // Shared so the strict (COORD_RE) and permissive (regex-strategy GEN_ROW)
 // coordinate readers, plus the title scanner, use one degree-glyph class.
-export const DEGREE_MARK = String.raw`[°º˚\uF0B0]`;
+// The degree glyph class includes the LETTER "o"/"O": some notices are typed
+// with "35o 57'.112" instead of a real degree sign. The surrounding row
+// structure (digits, mark, digits, prime) keeps this unambiguous.
+export const DEGREE_MARK = String.raw`[°º˚oO\uF0B0]`;
+// Hemisphere suffixes ("35° 58'.401N 14° 21'.003E") are tolerated and skipped:
+// Malta is always N/E, so they carry no information, but rejecting them used
+// to silently drop whole tables (the Mellieha launch lanes). Labels may be
+// lowercase ("1a") — some notices number sub-areas that way.
+export const LAT_HEMI = String.raw`(?:\s*[NS]\b)?`;
+export const LON_HEMI = String.raw`(?:\s*[EW]\b)?`;
 const COORD_RE = new RegExp(
-  String.raw`(?:\b(?<label>\d{1,3}[A-Z])\s+)?(?<latDeg>\d{2})\s*${DEGREE_MARK}\s*(?<latMin>\d{2})\s*['′]\s*\.?\s*(?<latFrac>\d{1,3})\s+(?<lonDeg>0?\d{2,3})\s*${DEGREE_MARK}\s*(?<lonMin>\d{2})\s*['′]\s*\.?\s*(?<lonFrac>\d{1,3})`,
+  String.raw`(?:\b(?<label>\d{1,3}[A-Za-z])\s+)?(?<latDeg>\d{2})\s*${DEGREE_MARK}\s*(?<latMin>\d{2})\s*['′]\s*\.?\s*(?<latFrac>\d{1,3})${LAT_HEMI}\s+(?<lonDeg>0?\d{2,3})\s*${DEGREE_MARK}\s*(?<lonMin>\d{2})\s*['′]\s*\.?\s*(?<lonFrac>\d{1,3})${LON_HEMI}`,
   'g',
 );
 const LOOSE_COORD_RE =
@@ -259,17 +275,28 @@ export function extractValidityWindow(
   text: string,
   publicationDate: string | null,
 ): { validFrom: string | null; validTo: string | null } {
-  const dateTime = text.match(
-    new RegExp(
-      `\\bon\\s+${NOTICE_DATE_PATTERN}[\\s\\S]{0,260}?\\bbetween\\s+([0-9]{1,2}(?::|\\.)?[0-9]{2})\\s*(?:hours?)?\\s+(?:and|to)\\s+([0-9]{1,2}(?::|\\.)?[0-9]{2})\\s*(?:hours?)?`,
-      'i',
-    ),
+  // A notice may list several dated sessions ("on 10th June … between 0800 and
+  // 1600 … and on 12th June … between …"), so collect every match and span the
+  // whole window — taking only the first session would set activeTo to the end
+  // of session 1 and hide the later sessions from mariners.
+  const sessionRe = new RegExp(
+    `\\bon\\s+${NOTICE_DATE_PATTERN}[\\s\\S]{0,260}?\\bbetween\\s+([0-9]{1,2}(?::|\\.)?[0-9]{2})\\s*(?:hours?)?\\s+(?:and|to)\\s+([0-9]{1,2}(?::|\\.)?[0-9]{2})\\s*(?:hours?)?`,
+    'gi',
   );
-  if (dateTime) {
-    const date = isoFromMatch(dateTime);
-    const start = date ? localNoticeDateTimeToUtcIso(date, dateTime[4]) : null;
-    const end = date ? localNoticeDateTimeToUtcIso(date, dateTime[5]) : null;
-    if (start && end) return { validFrom: start, validTo: end };
+  let earliestStart: string | null = null;
+  let latestEnd: string | null = null;
+  for (const m of text.matchAll(sessionRe)) {
+    const date = isoFromMatch(m);
+    if (!date) continue;
+    const start = localNoticeDateTimeToUtcIso(date, m[4]);
+    const end = localNoticeDateTimeToUtcIso(date, m[5]);
+    if (!start || !end) continue;
+    // UTC ISO strings compare correctly as strings.
+    if (!earliestStart || start < earliestStart) earliestStart = start;
+    if (!latestEnd || end > latestEnd) latestEnd = end;
+  }
+  if (earliestStart && latestEnd) {
+    return { validFrom: earliestStart, validTo: latestEnd };
   }
 
   const fromTo = text.match(

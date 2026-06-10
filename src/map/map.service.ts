@@ -49,64 +49,86 @@ export class MapService {
     return toPaginated(entities, query.limit, query.offset, toNoticeDto);
   }
 
-  // Cached: the metrics are a fan-out of ~a dozen COUNT queries and the result
-  // changes only when the notice set does, so a short TTL spares the DB the
-  // repeated scans under polling load. `asOf` reflects when the snapshot was
-  // computed, not the request time.
+  // Cached: the result changes only when the notice set does, so a short TTL
+  // spares the DB repeated scans under polling load. `asOf` reflects when the
+  // snapshot was computed, not the request time.
   async getNoticeMetrics(): Promise<NoticeMetricsDto> {
     return this.cache.wrap('map:notice-metrics', () =>
       this.computeNoticeMetrics(),
     );
   }
 
+  // Two GROUP BY queries yield every number (totals are sums): one over
+  // (kind, needsReview) for the breakdown, one over needsReview restricted to
+  // the active window.
   private async computeNoticeMetrics(): Promise<NoticeMetricsDto> {
     const now = new Date();
-    const [
-      total,
-      publicCount,
-      needsReviewCount,
-      activePublicCount,
-      activeNeedsReviewCount,
-      ...kindCounts
-    ] = await Promise.all([
-      this.noticeRepository.count(),
-      this.noticeRepository.count({ where: { needsReview: false } }),
-      this.noticeRepository.count({ where: { needsReview: true } }),
-      this.noticeRepository.count({
-        where: this.activeWhere(false, now),
-      }),
-      this.noticeRepository.count({
-        where: this.activeWhere(true, now),
-      }),
-      ...Object.values(NoticeKind).flatMap((kind) => [
-        this.noticeRepository.count({ where: { kind } }),
-        this.noticeRepository.count({ where: { kind, needsReview: false } }),
-        this.noticeRepository.count({ where: { kind, needsReview: true } }),
-      ]),
+    const [kindRows, activeRows] = await Promise.all([
+      this.noticeRepository
+        .createQueryBuilder('n')
+        .select('n.kind', 'kind')
+        .addSelect('n.needsReview', 'needsReview')
+        .addSelect('COUNT(*)', 'count')
+        .groupBy('n.kind')
+        .addGroupBy('n.needsReview')
+        .getRawMany<{
+          kind: NoticeKind;
+          needsReview: boolean;
+          count: string;
+        }>(),
+      this.noticeRepository
+        .createQueryBuilder('n')
+        .select('n.needsReview', 'needsReview')
+        .addSelect('COUNT(*)', 'count')
+        .where('n.activeFrom <= :now', { now })
+        .andWhere('(n.activeTo >= :now OR n.activeTo IS NULL)', { now })
+        .groupBy('n.needsReview')
+        .getRawMany<{ needsReview: boolean; count: string }>(),
     ]);
+
+    const byKind = new Map<
+      NoticeKind,
+      { publicCount: number; needsReviewCount: number }
+    >();
+    for (const row of kindRows) {
+      const entry = byKind.get(row.kind) ?? {
+        publicCount: 0,
+        needsReviewCount: 0,
+      };
+      if (row.needsReview) entry.needsReviewCount += Number(row.count);
+      else entry.publicCount += Number(row.count);
+      byKind.set(row.kind, entry);
+    }
+    const publicCount = sumBy(kindRows, (r) => !r.needsReview);
+    const needsReviewCount = sumBy(kindRows, (r) => r.needsReview);
 
     return {
       asOf: now.toISOString(),
-      total,
+      total: publicCount + needsReviewCount,
       publicCount,
       needsReviewCount,
-      activePublicCount,
-      activeNeedsReviewCount,
-      byKind: Object.values(NoticeKind).map((kind, index) => ({
-        kind,
-        total: kindCounts[index * 3] ?? 0,
-        publicCount: kindCounts[index * 3 + 1] ?? 0,
-        needsReviewCount: kindCounts[index * 3 + 2] ?? 0,
-      })),
+      activePublicCount: sumBy(activeRows, (r) => !r.needsReview),
+      activeNeedsReviewCount: sumBy(activeRows, (r) => r.needsReview),
+      byKind: Object.values(NoticeKind).map((kind) => {
+        const counts = byKind.get(kind) ?? {
+          publicCount: 0,
+          needsReviewCount: 0,
+        };
+        return {
+          kind,
+          total: counts.publicCount + counts.needsReviewCount,
+          ...counts,
+        };
+      }),
     };
   }
 
-  // Cheap change-detection summary. Notices are append-only with a review→public
-  // flip and hard deletes — never content edits — so the public set's COUNT plus
-  // MAX(createdAt) moves on every change the app can see: a notice approved into
-  // public view (count up), a manual add (count + newest createdAt up), or a
-  // delete (count down). Expiry is left out by design — it's deterministic, so
-  // the app drops lapsed notices itself using `nextExpiryAt` rather than polling.
+  // Cheap change-detection summary. The public set's COUNT plus MAX(updatedAt)
+  // moves on every change the app can see: an approval flips needsReview
+  // (touching updatedAt — createdAt would miss it, so offsetting delete+approve
+  // pairs between polls could collide), a manual add bumps both, a delete drops
+  // the count. Expiry is left out by design — it's deterministic, so the app
+  // drops lapsed notices itself using `nextExpiryAt` rather than polling.
   async getManifest(): Promise<CacheManifestDto> {
     return this.cache.wrap('map:manifest', () => this.computeManifest());
   }
@@ -117,9 +139,9 @@ export class MapService {
       this.noticeRepository
         .createQueryBuilder('n')
         .select('COUNT(*)', 'count')
-        .addSelect('MAX(n.createdAt)', 'maxCreatedAt')
+        .addSelect('MAX(n.updatedAt)', 'maxUpdatedAt')
         .where('n.needsReview = :needsReview', { needsReview: false })
-        .getRawOne<{ count: string; maxCreatedAt: Date | string | null }>(),
+        .getRawOne<{ count: string; maxUpdatedAt: Date | string | null }>(),
       this.noticeRepository
         .createQueryBuilder('n')
         .select('MIN(n.activeTo)', 'nextExpiry')
@@ -130,7 +152,7 @@ export class MapService {
     ]);
 
     const noticesRev = createHash('sha256')
-      .update(`${summary?.count ?? '0'}:${toIso(summary?.maxCreatedAt) ?? '0'}`)
+      .update(`${summary?.count ?? '0'}:${toIso(summary?.maxUpdatedAt) ?? '0'}`)
       .digest('hex');
 
     return {
@@ -185,6 +207,13 @@ export class MapService {
         error: `notice to mariners with id ${id} not found`,
       });
   }
+}
+
+function sumBy(
+  rows: { needsReview: boolean; count: string }[],
+  match: (row: { needsReview: boolean }) => boolean,
+): number {
+  return rows.filter(match).reduce((acc, row) => acc + Number(row.count), 0);
 }
 
 // Raw aggregate columns come back as a Date (pg driver) or string depending on

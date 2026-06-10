@@ -8,21 +8,21 @@
 //   polygon_coastline                   -> Polygon, closed via coastline (or straight-line fallback)
 //   polygon                             -> Polygon from the points as-is
 //   point                               -> Point
+import { circle as turfCircle } from '@turf/circle';
+import { buffer as turfBuffer } from '@turf/buffer';
+import { difference as turfDifference } from '@turf/difference';
+import { sector as turfSector } from '@turf/sector';
+import { bearing as turfBearing } from '@turf/bearing';
+import { booleanIntersects } from '@turf/boolean-intersects';
+import { booleanPointInPolygon } from '@turf/boolean-point-in-polygon';
+import { booleanWithin } from '@turf/boolean-within';
+import { rewind as turfRewind } from '@turf/rewind';
 import {
-  circle as turfCircle,
-  buffer as turfBuffer,
   lineString as turfLine,
   polygon as turfPolygon,
-  difference as turfDifference,
-  sector as turfSector,
-  bearing as turfBearing,
-  booleanIntersects,
-  booleanPointInPolygon,
-  booleanWithin,
   feature as turfFeature,
   featureCollection as turfFC,
-  rewind as turfRewind,
-} from '@turf/turf';
+} from '@turf/helpers';
 import type {
   Feature,
   FeatureCollection,
@@ -278,11 +278,50 @@ function buildAreaFeature(area: Area, notice: NoticeExtraction): BuiltFeature {
   };
 }
 
+// Sibling zones from one notice (Mellieha's mooring zones A..N, separated by
+// fairways) must not overlap; a vertex of one zone landing inside another is
+// the signature of a transcription typo in the source table that is far too
+// small for the gross-outlier guard to see. Only plain point-list polygons are
+// checked: circles/sectors legitimately overlap corridors, and coastline-
+// closed rings follow the shore wherever it goes.
+function flagOverlappingSiblings(
+  notice: NoticeExtraction,
+  features: BuiltFeature[],
+): void {
+  const polys = features
+    .map((f, i) => ({ f, area: notice.areas[i] }))
+    .filter(
+      ({ f, area }) =>
+        area.geometry_kind === 'polygon' && f.geometry?.type === 'Polygon',
+    );
+  for (const a of polys) {
+    for (const b of polys) {
+      if (a === b) continue;
+      const ring = (a.f.geometry as Polygon).coordinates[0];
+      // ignoreBoundary: sibling zones legitimately share corner vertices and
+      // edges; only a vertex strictly INSIDE the other zone is suspicious.
+      const hit = b.area.points.some((p) =>
+        booleanPointInPolygon([p.lon, p.lat], turfPolygon([ring]), {
+          ignoreBoundary: true,
+        }),
+      );
+      if (hit) {
+        const w = a.f.properties.warnings as string[];
+        w.push(
+          `overlaps_sibling_area:${a.area.area_id}~${b.area.area_id} (a vertex of one zone falls inside the other — possible transcription error)`,
+        );
+      }
+    }
+  }
+}
+
 export function buildFeatureCollection(
   notice: NoticeExtraction,
 ): FeatureCollection<Geometry | null> {
+  const features = notice.areas.map((a) => buildAreaFeature(a, notice));
+  flagOverlappingSiblings(notice, features);
   return {
     type: 'FeatureCollection',
-    features: notice.areas.map((a) => buildAreaFeature(a, notice)),
+    features,
   };
 }

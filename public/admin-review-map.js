@@ -16,7 +16,6 @@
     }
     try {
       const parsed = JSON.parse(node.textContent);
-      console.debug('[admin-review-map]', id, parsed);
       return parsed;
     } catch (err) {
       console.warn(
@@ -29,8 +28,24 @@
     }
   }
 
+  // Leaflet loads from a CDN; cap the wait (~5s) so a CDN outage or CSP block
+  // surfaces a hint instead of polling forever.
+  let leafletAttempts = 0;
+
   function start() {
     if (typeof L === 'undefined') {
+      leafletAttempts += 1;
+      if (leafletAttempts > 100) {
+        console.warn(
+          '[admin-review-map] Leaflet never loaded (CDN unreachable or blocked); map disabled',
+        );
+        const mapNode = document.getElementById('review-map');
+        if (mapNode) {
+          mapNode.textContent =
+            'Map unavailable: the Leaflet library failed to load.';
+        }
+        return;
+      }
       window.setTimeout(start, 50);
       return;
     }

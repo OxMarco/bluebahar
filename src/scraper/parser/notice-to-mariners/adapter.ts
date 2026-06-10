@@ -294,6 +294,10 @@ export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
   const genericDropReasons = notes.filter((n) =>
     n.startsWith('generic_coord_outside_malta_bbox:'),
   );
+  // A vision mismatch means the notice's own chart contradicts the extracted
+  // topology — exactly what the review queue exists for. Match/unverifiable/
+  // failed vision notes stay informational.
+  const visionReasons = notes.filter((n) => n.startsWith('vision_mismatch:'));
   const usedGenericFallback = extraction.areas.some((a) =>
     a.restrictions.some((r) => r.includes('generic extraction')),
   );
@@ -314,6 +318,7 @@ export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
     ...scannedReasons,
     ...possibleCoordReasons,
     ...genericDropReasons,
+    ...visionReasons,
     usedGenericFallback ? 'generic_extraction_verify_geometry' : null,
     suspiciousEmpty ? 'restriction_with_coordinates_but_no_geometry' : null,
     titleLooksLikeUrl ? 'title_looks_like_url' : null,

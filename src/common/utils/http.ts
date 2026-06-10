@@ -8,7 +8,7 @@ const cookieJar = new CookieJar();
 
 // Direct egress (default). Used for sources reachable from our server IP, e.g.
 // the ArcGIS dataset refresh.
-export const impit = new Impit({
+const impit = new Impit({
   browser: 'chrome',
   ignoreTlsErrors: true,
   cookieJar,
@@ -31,16 +31,24 @@ export const proxiedImpit = proxyUrl
     })
   : impit;
 
+async function fetchWith(
+  client: Impit,
+  url: string,
+  init?: Parameters<typeof impit.fetch>[1],
+) {
+  const res = await client.fetch(url, init);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} fetching ${url}`);
+  }
+  return res;
+}
+
 async function fetchTextWith(
   client: Impit,
   url: string,
   init?: Parameters<typeof impit.fetch>[1],
 ): Promise<string> {
-  const res = await client.fetch(url, init);
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} fetching ${url}`);
-  }
-  return res.text();
+  return (await fetchWith(client, url, init)).text();
 }
 
 async function fetchBufferWith(
@@ -48,10 +56,7 @@ async function fetchBufferWith(
   url: string,
   init?: Parameters<typeof impit.fetch>[1],
 ): Promise<Buffer> {
-  const res = await client.fetch(url, init);
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} fetching ${url}`);
-  }
+  const res = await fetchWith(client, url, init);
   return Buffer.from(await res.arrayBuffer());
 }
 

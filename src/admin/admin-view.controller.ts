@@ -12,6 +12,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  UnauthorizedException,
   Query,
   Render,
   Res,
@@ -25,8 +26,10 @@ import type { Response } from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import * as Sentry from '@sentry/nestjs';
 import { AdminService } from './admin.service';
+import { Throttle } from '@nestjs/throttler';
 import {
   AdminJwtGuard,
+  AdminLoginRedirect,
   AdminLoginRedirectFilter,
   ADMIN_SESSION_COOKIE,
 } from './admin-jwt.guard';
@@ -34,7 +37,7 @@ import { LoginDto } from './dto/login.dto';
 import { CreateNoticeDto } from './dto/create-notice.dto';
 import { ViewLogsDto } from './dto/view-logs.dto';
 import { ViewFlaggedDto } from './dto/view-flagged.dto';
-import { GetNoticesDto } from '../map/dto/get-notices.dto';
+import { ReviewNoticesDto } from './dto/review-notices.dto';
 import { Paginated } from '../common/dto/paginated.dto';
 import { LogType } from '../scraper/log-type';
 import { NoticeKind } from '../scraper/notice-kind';
@@ -43,6 +46,15 @@ import { NoticeKind } from '../scraper/notice-kind';
 class AdminCreateNoticeExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const response = host.switchToHttp().getResponse<Response>();
+    // Nest dispatches the LAST registered matching filter first, so this
+    // catch-all sees a guard rejection before AdminLoginRedirectFilter ever
+    // could — handle the redirect explicitly rather than re-rendering the
+    // form at a logged-out user.
+    if (exception instanceof AdminLoginRedirect) {
+      return response.redirect(
+        exception.expired ? '/admin/login?expired=1' : '/admin/login',
+      );
+    }
     const request = host
       .switchToHttp()
       .getRequest<{ body?: Record<string, unknown> }>();
@@ -56,14 +68,13 @@ class AdminCreateNoticeExceptionFilter implements ExceptionFilter {
       });
     }
 
-    return response.status(status).render('admin/new', {
-      page: 'new',
-      title: 'Add notice',
-      kinds: Object.values(NoticeKind),
-      error: createNoticeErrorMessage(exception),
-      success: null,
-      form: request.body ?? {},
-    });
+    return response.status(status).render(
+      'admin/new',
+      newNoticeView({
+        error: createNoticeErrorMessage(exception),
+        form: request.body ?? {},
+      }),
+    );
   }
 }
 
@@ -71,9 +82,13 @@ class AdminCreateNoticeExceptionFilter implements ExceptionFilter {
 class AdminLoginExceptionFilter implements ExceptionFilter {
   catch(exception: HttpException, host: ArgumentsHost) {
     const response = host.switchToHttp().getResponse<Response>();
+    const status: HttpStatus = exception.getStatus();
 
-    return response.status(exception.getStatus()).render('admin/login', {
-      error: 'Invalid key.',
+    return response.status(status).render('admin/login', {
+      error:
+        status === HttpStatus.TOO_MANY_REQUESTS
+          ? 'Too many attempts. Try again in a minute.'
+          : 'Invalid key.',
       notice: null,
     });
   }
@@ -104,6 +119,24 @@ function createNoticeErrorMessage(exception: unknown): string {
   return 'Unable to create notice. Please try again.';
 }
 
+function newNoticeView(
+  overrides: Partial<{
+    error: string | null;
+    success: string | null;
+    form: object;
+  }> = {},
+) {
+  return {
+    page: 'new',
+    title: 'Add notice',
+    kinds: Object.values(NoticeKind),
+    error: null,
+    success: null,
+    form: {},
+    ...overrides,
+  };
+}
+
 // Browser-facing admin panel. Auth is a session JWT in an httpOnly cookie,
 // minted by /admin/login after a constant-time check against ADMIN_API_KEY.
 // All other routes are gated by AdminJwtGuard.
@@ -112,6 +145,7 @@ function createNoticeErrorMessage(exception: unknown): string {
 export class AdminViewController {
   private readonly adminKey: Buffer;
   private readonly sessionTtlSeconds: number;
+  private readonly secureCookie: boolean;
 
   constructor(
     private readonly adminService: AdminService,
@@ -124,6 +158,11 @@ export class AdminViewController {
     this.sessionTtlSeconds = configService.getOrThrow<number>(
       'ADMIN_SESSION_TTL_SECONDS',
     );
+    // Secure unless explicitly in development: a prod deploy that forgets to
+    // set NODE_ENV must not ship the session cookie over plain HTTP. Read via
+    // ConfigService so the schema default applies (process.env may be unset).
+    this.secureCookie =
+      configService.getOrThrow<string>('NODE_ENV') !== 'development';
   }
 
   @Get('login')
@@ -137,15 +176,15 @@ export class AdminViewController {
   }
 
   @Post('login')
+  // Tight per-route budget: the global throttle is sized for map traffic and
+  // would allow ~172k key guesses/day/IP against this form.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @UseFilters(AdminLoginExceptionFilter)
   login(@Body() dto: LoginDto, @Res() res: Response) {
     if (!this.keyMatches(dto.key)) {
-      // Re-render the login page with an inline error rather than 401-ing —
-      // this is a human-facing form, not an API.
-      return res.status(HttpStatus.UNAUTHORIZED).render('admin/login', {
-        error: 'Invalid key.',
-        notice: null,
-      });
+      // AdminLoginExceptionFilter re-renders the login page with an inline
+      // error rather than 401-ing — this is a human-facing form, not an API.
+      throw new UnauthorizedException();
     }
     const token = this.jwtService.sign(
       { sub: 'admin' },
@@ -153,7 +192,7 @@ export class AdminViewController {
     );
     res.cookie(ADMIN_SESSION_COOKIE, token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: this.secureCookie,
       sameSite: 'strict',
       maxAge: this.sessionTtlSeconds * 1000,
       path: '/admin',
@@ -176,7 +215,7 @@ export class AdminViewController {
   @Get('review')
   @UseGuards(AdminJwtGuard)
   @Render('admin/review')
-  async reviewPage(@Query() query: GetNoticesDto) {
+  async reviewPage(@Query() query: ReviewNoticesDto) {
     const page = await this.adminService.viewNoticesInReview(query);
     return {
       page: 'review',
@@ -219,31 +258,23 @@ export class AdminViewController {
   @UseGuards(AdminJwtGuard)
   @Render('admin/new')
   newPage() {
-    return {
-      page: 'new',
-      title: 'Add notice',
-      kinds: Object.values(NoticeKind),
-      error: null,
-      success: null,
-      form: {},
-    };
+    return newNoticeView();
   }
 
   @Post('notices')
   @UseGuards(AdminJwtGuard)
-  // Redirect filter first so a guard rejection (AdminLoginRedirect) bounces to
-  // login instead of the catch-all rendering admin/new with no session.
+  // The catch-all filter is consulted first (Nest reverses filter registration
+  // order) and handles AdminLoginRedirect itself; the redirect filter stays as
+  // documentation of intent for non-create routes.
   @UseFilters(AdminLoginRedirectFilter, AdminCreateNoticeExceptionFilter)
   async createNotice(@Body() dto: CreateNoticeDto, @Res() res: Response) {
     const saved = await this.adminService.addNtm(dto);
-    return res.render('admin/new', {
-      page: 'new',
-      title: 'Add notice',
-      kinds: Object.values(NoticeKind),
-      error: null,
-      success: `Created ${saved.id} (${saved.title}).`,
-      form: {},
-    });
+    return res.render(
+      'admin/new',
+      newNoticeView({
+        success: `Created ${saved.id} (${saved.title}).`,
+      }),
+    );
   }
 
   // HTMX-driven action endpoints. Each returns an empty 200 so the row,
@@ -296,8 +327,6 @@ function paginationMeta<T>(page: Paginated<T>, filters: object = {}) {
     offset: page.offset,
     hasMore: page.hasMore,
     shown: page.items.length,
-    nextOffset: page.offset + page.limit,
-    prevOffset: Math.max(0, page.offset - page.limit),
     hasPrev: page.offset > 0,
     nextHref: pageHref(page.offset + page.limit),
     prevHref: pageHref(Math.max(0, page.offset - page.limit)),

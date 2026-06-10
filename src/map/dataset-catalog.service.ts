@@ -2,7 +2,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  OnApplicationBootstrap,
+  OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { HealthIndicatorResult } from '@nestjs/terminus';
@@ -89,12 +89,16 @@ interface GeoJsonFeatureCollection {
 }
 
 @Injectable()
-export class DatasetCatalogService implements OnApplicationBootstrap {
+export class DatasetCatalogService implements OnModuleInit {
   private readonly logger = new Logger(DatasetCatalogService.name);
   private readonly entries = new Map<string, DatasetEntry>();
   private readonly loadFailures = new Map<string, string>();
 
-  async onApplicationBootstrap() {
+  // OnModuleInit (not OnApplicationBootstrap) on purpose: Nest completes every
+  // onModuleInit hook app-wide before any onApplicationBootstrap runs, which
+  // is what guarantees DatasetRefreshService's bootstrap refresh can't race
+  // the seed load (hooks of the same kind within a module run concurrently).
+  async onModuleInit() {
     this.entries.clear();
     this.loadFailures.clear();
 
@@ -162,12 +166,14 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
 
   healthCheck(): HealthIndicatorResult {
     const status = this.status();
+    // A failed optional overlay must NOT pull the instance out of rotation:
+    // readiness gates on this, restarts can't fix a bad seed file, and the
+    // notices endpoints stay useful regardless. Report down only when nothing
+    // loaded at all; partial failures surface via unavailableCount, the
+    // diagnostics endpoint, and the per-dataset Sentry alerts.
     return {
       dataset_catalog: {
-        status:
-          status.loaded === status.configured && status.unavailable.length === 0
-            ? 'up'
-            : 'down',
+        status: status.loaded > 0 || status.configured === 0 ? 'up' : 'down',
         loaded: status.loaded,
         configured: status.configured,
         unavailableCount: status.unavailable.length,
@@ -210,13 +216,14 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
   }
 
   private buildEntry(def: DatasetDefinition, raw: string): DatasetEntry {
-    const parsed = JSON.parse(raw) as GeoJsonFeatureCollection;
+    const parsed = JSON.parse(raw) as unknown;
 
     // Interactive datasets rebuild their payload from normalized features, so
-    // normalize() owns validation and can drop unrenderable features (null
-    // geometry, missing title). Context datasets are served verbatim, so every
-    // feature must pass up front. Validating all geometry here would reject a
-    // whole interactive layer for a single null-geometry feature.
+    // normalize() owns validation and drops unrenderable features (null or
+    // invalid geometry, missing title) individually — one bad upstream feature
+    // must not fail a whole layer or pin a daily-refreshed one to its boot
+    // seed. Context datasets are served verbatim, so every feature must pass
+    // up front and any invalid one rejects the dataset.
     const { payload, summary } =
       def.kind === 'interactive'
         ? this.normalize(def, parsed)
@@ -244,7 +251,7 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
 
   private normalize(
     def: DatasetDefinition,
-    parsed: GeoJsonFeatureCollection,
+    parsed: unknown,
   ): { payload: string; summary: GeoJsonSummary } {
     const adapter = ADAPTERS[def.key];
     if (!adapter) {
@@ -254,20 +261,15 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
         `Interactive dataset "${def.key}" has no adapter registered`,
       );
     }
-    if (!isRecord(parsed) || parsed.type !== 'FeatureCollection') {
-      throw new Error(
-        `Expected GeoJSON FeatureCollection, got type=${String(parsed?.type ?? 'undefined')}`,
-      );
-    }
-    if (!Array.isArray(parsed.features)) {
-      throw new Error(
-        'Expected GeoJSON FeatureCollection.features to be an array',
-      );
-    }
+    assertFeatureCollection(parsed);
 
+    const geometry = geometrySchema(boundsFor(def));
     const out: GeoJsonFeature[] = [];
     let droppedNoTitle = 0;
     let droppedNoGeometry = 0;
+    let droppedInvalidGeometry = 0;
+    const types = new Set<string>();
+    let collectionBbox: GeoJsonBbox | undefined;
     const seenIds = new Set<string>();
     for (const [index, feature] of parsed.features.entries()) {
       // Upstream feature services return rows without a mapped location as
@@ -275,6 +277,13 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
       // than fail the layer.
       if (!isRecord(feature.geometry)) {
         droppedNoGeometry += 1;
+        continue;
+      }
+      // Same policy for invalid geometry (e.g. an ArcGIS row emitting an
+      // out-of-bounds (0, 0) point): drop the feature, keep the layer.
+      const geomResult = geometry.safeParse(feature.geometry);
+      if (!geomResult.success) {
+        droppedInvalidGeometry += 1;
         continue;
       }
       const rawProps = (feature.properties ?? {}) as Record<string, unknown>;
@@ -285,6 +294,8 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
       }
       const id = featureId(def.key, normalized, rawProps, index, seenIds);
       const bbox = geoJsonBbox(feature.geometry);
+      types.add(geomResult.data.type);
+      if (bbox) collectionBbox = foldBbox(collectionBbox, bbox);
       out.push({
         type: 'Feature',
         id,
@@ -293,18 +304,25 @@ export class DatasetCatalogService implements OnApplicationBootstrap {
         properties: { ...normalized, id, ...stylingPrimitives(normalized) },
       });
     }
-    const dropped = droppedNoTitle + droppedNoGeometry;
+    const dropped = droppedNoTitle + droppedNoGeometry + droppedInvalidGeometry;
     if (dropped > 0) {
       this.logger.warn(
-        `Dropped ${dropped}/${parsed.features.length} feature(s) from "${def.key}" (${droppedNoTitle} missing title, ${droppedNoGeometry} null geometry)`,
+        `Dropped ${dropped}/${parsed.features.length} feature(s) from "${def.key}" (${droppedNoTitle} missing title, ${droppedNoGeometry} null geometry, ${droppedInvalidGeometry} invalid geometry)`,
       );
     }
-    if (out.length === 0) {
+    if (out.length === 0 || !collectionBbox) {
       throw new Error(
         `Dataset "${def.key}" produced no features after normalization (${dropped}/${parsed.features.length} dropped)`,
       );
     }
-    const summary = summarizeFeatures(def, out);
+    // Geometry was validated feature-by-feature above and the collection bbox
+    // folded from the per-feature ones, so no second pass over all
+    // coordinates (summarizeFeatures) is needed here.
+    const summary: GeoJsonSummary = {
+      featureCount: out.length,
+      geometryTypes: [...types].sort((a, b) => a.localeCompare(b)),
+      bbox: collectionBbox,
+    };
     const payload = JSON.stringify({
       type: 'FeatureCollection',
       bbox: summary.bbox,
@@ -337,11 +355,19 @@ function stylingPrimitives(
 
 function validateFeatureCollection(
   def: DatasetDefinition,
-  value: GeoJsonFeatureCollection,
+  value: unknown,
 ): GeoJsonSummary {
-  if (!isRecord(value) || value.type !== 'FeatureCollection') {
+  assertFeatureCollection(value);
+  return summarizeFeatures(def, value.features);
+}
+
+function assertFeatureCollection(
+  value: unknown,
+): asserts value is GeoJsonFeatureCollection {
+  const type = isRecord(value) ? value.type : undefined;
+  if (!isRecord(value) || type !== 'FeatureCollection') {
     throw new Error(
-      `Expected GeoJSON FeatureCollection, got type=${String(value?.type ?? 'undefined')}`,
+      `Expected GeoJSON FeatureCollection, got type=${formatJsonValue(type)}`,
     );
   }
   if (!Array.isArray(value.features)) {
@@ -349,7 +375,28 @@ function validateFeatureCollection(
       'Expected GeoJSON FeatureCollection.features to be an array',
     );
   }
-  return summarizeFeatures(def, value.features);
+}
+
+function formatJsonValue(value: unknown): string {
+  switch (typeof value) {
+    case 'undefined':
+      return 'undefined';
+    case 'string':
+      return value;
+    case 'number':
+    case 'boolean':
+    case 'bigint':
+      return value.toString();
+    case 'object':
+      return value === null
+        ? 'null'
+        : Array.isArray(value)
+          ? 'array'
+          : 'object';
+    case 'function':
+    case 'symbol':
+      return typeof value;
+  }
 }
 
 function summarizeFeatures(
@@ -529,6 +576,19 @@ function geoJsonBbox(value: unknown): GeoJsonBbox | undefined {
   } catch {
     return undefined;
   }
+}
+
+function foldBbox(
+  acc: GeoJsonBbox | undefined,
+  next: GeoJsonBbox,
+): GeoJsonBbox {
+  if (!acc) return next;
+  return [
+    Math.min(acc[0], next[0]),
+    Math.min(acc[1], next[1]),
+    Math.max(acc[2], next[2]),
+    Math.max(acc[3], next[3]),
+  ];
 }
 
 function isFiniteNumber(value: unknown): value is number {

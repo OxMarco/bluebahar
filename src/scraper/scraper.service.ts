@@ -5,7 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { createHash } from 'node:crypto';
-import { LessThan, Repository } from 'typeorm';
+import { In, LessThan, Repository } from 'typeorm';
 import { NoticeToMariners } from './entities/notice-to-mariners.entity';
 import { Logs } from './entities/logs.entity';
 import { listNoticeLinks } from './parser/notice-to-mariners';
@@ -46,8 +46,18 @@ export class ScraperService implements OnApplicationBootstrap {
   @Cron(CronExpression.EVERY_12_HOURS)
   async scrapeNoticeToMariners() {
     const links = await listNoticeLinks();
+    if (links.length === 0) {
+      await this.recordScrapeLog('No new notices to enqueue (0 active)');
+      return { message: 'No new notices', enqueued: 0 };
+    }
 
-    const stored = await this.ntmRepo.find({ select: { source: true } });
+    // Only check the candidate URLs for membership (hits the unique(source,
+    // subKey) index) — the notices table is append-only and unbounded, so a
+    // full select would grow without limit.
+    const stored = await this.ntmRepo.find({
+      where: { source: In(links.map((l) => l.url)) },
+      select: { source: true },
+    });
     const storedUrls = new Set(stored.map((n) => n.source));
 
     const inFlight = await this.queue.getJobs(['waiting', 'active', 'delayed']);
@@ -67,21 +77,39 @@ export class ScraperService implements OnApplicationBootstrap {
       return { message: 'No new notices', enqueued: 0 };
     }
 
+    let enqueued = 0;
+    let retried = 0;
     for (const link of next) {
-      // Deterministic jobId derived from the URL: BullMQ rejects a second job
-      // with an id already present, so a duplicate enqueue (overlapping cron
-      // run, retry, clock skew) can't queue the same notice twice. Belt-and-
-      // braces on top of the storedUrls / inFlightUrls filtering above.
+      // Deterministic jobId derived from the URL: BullMQ silently ignores an
+      // add() whose id already exists in ANY state, so a duplicate enqueue
+      // (overlapping cron run, retry, clock skew) can't queue the same notice
+      // twice. Belt-and-braces on top of the storedUrls / inFlightUrls
+      // filtering above. The flip side: a job that exhausted its attempts
+      // lingers in the failed set (removeOnFail) and would block its URL from
+      // ever being re-added — retry it explicitly instead.
       const jobId = `ntm-${createHash('sha256').update(link.url).digest('hex')}`;
+      const existing = await this.queue.getJob(jobId);
+      if (existing) {
+        if (await existing.isFailed()) {
+          await existing.retry();
+          retried += 1;
+        }
+        // waiting/active/delayed/completed: already in flight or done.
+        continue;
+      }
       await this.queue.add(
         'notice-to-mariners',
         { url: link.url, title: link.title },
         { jobId },
       );
+      enqueued += 1;
     }
 
-    await this.recordScrapeLog(`Enqueued ${next.length} notice(s)`);
-    return { message: 'Enqueued', enqueued: next.length };
+    await this.recordScrapeLog(
+      `Enqueued ${enqueued} notice(s)` +
+        (retried > 0 ? `, retried ${retried} previously failed` : ''),
+    );
+    return { message: 'Enqueued', enqueued: enqueued + retried };
   }
 
   // Audit logs are an unbounded-growth table; trim entries older than the

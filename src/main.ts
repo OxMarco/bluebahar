@@ -1,6 +1,7 @@
 import './instrument';
 import * as Sentry from '@sentry/nestjs';
 import { NestFactory, Reflector } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
 import {
   ValidationPipe,
   HttpStatus,
@@ -162,7 +163,8 @@ async function bootstrap() {
   // X-Forwarded-For and bypass the throttler, which keys on req.ip.
   app.set('trust proxy', 1);
 
-  await app.listen(process.env.PORT ?? 3000);
+  // Validated + defaulted by config.schema.ts (PORT defaults to 3000 there).
+  await app.listen(app.get(ConfigService).getOrThrow<number>('PORT'));
 }
 
 bootstrap().catch(async (err) => {

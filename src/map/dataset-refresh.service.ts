@@ -27,11 +27,15 @@ export class DatasetRefreshService implements OnApplicationBootstrap {
     private readonly logsRepository: Repository<Logs>,
   ) {}
 
-  // Runs after DatasetCatalogService has loaded the seed files (its hook is
-  // awaited first), so a fresh deploy serves up-to-date data within seconds
-  // instead of waiting for the first cron tick.
-  async onApplicationBootstrap() {
-    await this.refreshLiveDatasets();
+  // Runs after DatasetCatalogService has loaded the seed files — its hook is
+  // onModuleInit, and Nest completes all onModuleInit hooks before any
+  // onApplicationBootstrap — so a fresh deploy serves up-to-date data within
+  // seconds instead of waiting for the first cron tick. Fire-and-forget: the
+  // seed already covers every layer, so startup must not block on (or fail
+  // with) an upstream fetch. refreshOne() catches and reports per-dataset
+  // errors, so this promise never rejects.
+  onApplicationBootstrap() {
+    void this.refreshLiveDatasets();
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_4AM)

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type OpenAI from 'openai';
 import * as core from './core';
+import * as visionVerify from './vision-verify';
 import { extractNoticeFromBuffer } from './extract';
 import { runRegex } from './regex-strategy';
 import { buildFeatureCollection } from './geometry';
@@ -277,6 +278,165 @@ D 35° 57'.290 014° 31'.190
     );
   });
 
+  it('splits a contiguous multi-zone label table into one polygon per zone', () => {
+    // Mellieha-style table: zones A and B listed back to back with nothing but
+    // the label prefixes separating them. One ring through all 8 points would
+    // be a self-intersecting zigzag.
+    const notice = pipelineText(`
+PORTS AND YACHTING DIRECTORATE
+NOTICE TO MARINERS No 84 of 2026
+3 June 2026
+Mooring zones
+Mariners are notified that mooring areas (Zones A and B) have been established.
+The limits of these areas are as follows: -
+LATITUDE (N) LONGITUDE (E)
+A1 35° 58'.442 014° 21'.161
+A2 35° 58'.607 014° 21'.476
+A3 35° 58'.462 014° 21'.521
+A4 35° 58'.399 014° 21'.205
+B1 35° 58'.365 014° 21'.149
+B2 35° 58'.441 014° 21'.527
+B3 35° 58'.355 014° 21'.554
+B4 35° 58'.337 014° 21'.464
+`);
+    const polys = notice.areas.filter((a) => a.geometryType === 'polygon');
+    expect(polys.map((p) => p.label)).toEqual([
+      'Mooring zones — Zone A',
+      'Mooring zones — Zone B',
+    ]);
+    // 4 corners + closing point each, not one 8-point zigzag.
+    expect(polys.map((p) => p.points.length)).toEqual([5, 5]);
+  });
+
+  it('parses coordinate rows with hemisphere suffixes and short longitude degrees', () => {
+    const notice = pipelineText(`
+PORTS AND YACHTING DIRECTORATE
+NOTICE TO MARINERS No 85 of 2026
+3 June 2026
+Launch lane
+Mariners are notified of a launch lane.
+Launch Lane 1 Shore Point 35° 58'.401N 14° 21'.003E
+Fairway Point 35° 58'.424N 14° 21'.044E
+`);
+    expect(notice.areas).toHaveLength(1);
+    expect(notice.areas[0].geometryType).toBe('line');
+    expect(notice.areas[0].points[0].lat).toBeCloseTo(35.97335);
+    expect(notice.areas[0].points[0].long).toBeCloseTo(14.35005);
+  });
+
+  it('accepts the letter "o" as a degree mark', () => {
+    const notice = pipelineText(`
+PORTS AND YACHTING DIRECTORATE
+NOTICE TO MARINERS No 86 of 2026
+3 June 2026
+Foul ground
+Mariners are notified of foul ground at the following position.
+LATITUDE (N) LONGITUDE (E)
+35o 57'.112 14o 24'.497
+`);
+    expect(notice.areas).toHaveLength(1);
+    expect(notice.areas[0].geometryType).toBe('point');
+    expect(notice.areas[0].points[0].lat).toBeCloseTo(35.95186667);
+  });
+
+  it('closes a two-point bay-mouth line via the coastline on "either side of the bay"', () => {
+    // St George's Bay phrasing: no "coastline" keyword, but the two points sit
+    // on the shore either side of the bay and the restricted area is the
+    // enclosed water — a bare line A-B would lose the area entirely.
+    const notice = pipelineText(`
+PORTS AND YACHTING DIRECTORATE
+LOCAL NOTICE TO MARINERS No 87 of 2026
+3 June 2026
+Entry Restriction in St. George's Bay
+The restricted area is delineated by the imaginary line A to B, on the shore either side of
+the bay (as shown on attached chart) and the sea area Southwest of the line.
+LATITUDE (N) LONGITUDE (E)
+A 35° 55'.666 014° 29'.461
+B 35° 55'.593 014° 29'.518
+`);
+    expect(notice.areas).toHaveLength(1);
+    expect(notice.areas[0].geometryType).toBe('polygon');
+    // Coastline vertices stitched in, not just A-B-A.
+    expect(notice.areas[0].points.length).toBeGreaterThan(4);
+  });
+
+  it('extracts every area of a multi-area firing notice: sector, circle and corridor', () => {
+    // Gunex-style: a Pembroke arc recipe ("thence … radius … centred on
+    // position A"), a transit corridor M-N, and a separate circular area at Z.
+    // The old single-radius branch kept only one shape per notice.
+    const notice = pipelineText(`
+PORTS AND YACHTING DIRECTORATE
+NOTICE TO MARINERS No 88 of 2026
+3 June 2026
+Live firing practice exercise at sea
+At Pembroke ranges LM-D01
+From Position A: LATITUDE (N) LONGITUDE (E)
+35° 55'.900 014° 28'.533
+thence on a bearing of 335 True x 8.5 nautical miles to:
+Position B: LATITUDE (N) LONGITUDE (E)
+36° 03'.620 014° 24'.100
+thence on an arc of a circle radius 8.5 nautical miles centred on position A to:
+Position C: LATITUDE (N) LONGITUDE (E)
+36° 00'.150 014° 37'.600
+thence on a bearing of 240 True to position A.
+Mariners are also informed that a corridor between the coast and the line M to N has been
+established for the passage of all vessels.
+LATITUDE (N) LONGITUDE (E)
+M 36° 02'.869 014° 24'.532
+N 35° 58'.387 014° 33'.834
+At south of Malta LM-D5
+The exercise will be held within a circular area of 8 Nautical Mile Radius, centred on point
+Z:
+Position Z: LATITUDE (N) LONGITUDE (E)
+35° 30'.500 014° 11'.000
+`);
+    const kinds = notice.areas.map((a) => a.geometryType);
+    // sector polygon + circle polygon + corridor line
+    expect(kinds.filter((k) => k === 'polygon')).toHaveLength(2);
+    expect(kinds.filter((k) => k === 'line')).toHaveLength(1);
+    const line = notice.areas.find((a) => a.geometryType === 'line')!;
+    expect(line.points).toHaveLength(2);
+    expect(line.points[0].lat).toBeCloseTo(36.04781667);
+  });
+
+  it('flags sibling zones whose polygons overlap (transcription typo signature)', () => {
+    const extraction: NoticeExtraction = {
+      source_file: 'synthetic.pdf',
+      notice_no: '98',
+      notice_year: '2026',
+      date: '2026-06-03',
+      title: 'Synthetic zones',
+      document_type: 'new_restriction',
+      valid_from: '2026-06-03',
+      valid_to: null,
+      referenced_notices: [],
+      charts_affected: [],
+      areas: [
+        polygonArea('zone-a', [
+          { lat: 35.95, lon: 14.4 },
+          { lat: 35.95, lon: 14.45 },
+          { lat: 35.99, lon: 14.45 },
+          { lat: 35.99, lon: 14.4 },
+        ]),
+        polygonArea('zone-b', [
+          { lat: 35.96, lon: 14.42 }, // strictly inside zone-a
+          { lat: 35.96, lon: 14.5 },
+          { lat: 35.97, lon: 14.5 },
+        ]),
+      ],
+    };
+    const notice = adaptToParsedNotice({
+      source: 'file://synthetic.pdf',
+      extraction,
+      featureCollection: buildFeatureCollection(extraction),
+      enrichment: null,
+      notes: ['coords:7'],
+    });
+    expect(
+      notice.reviewReasons.some((r) => r.startsWith('overlaps_sibling_area:')),
+    ).toBe(true);
+  });
+
   it('flags an area outside Maltese national waters for manual review', () => {
     const notice = areaNotice(
       polygonArea('outside-waters', [
@@ -294,6 +454,8 @@ D 35° 57'.290 014° 31'.190
 });
 
 describe('extractNoticeFromBuffer orchestration', () => {
+  const activeNot35Now = new Date('2026-06-08T15:00:00.000Z');
+
   afterEach(() => jest.restoreAllMocks());
 
   function fakeOpenAI(create: jest.Mock): OpenAI {
@@ -319,6 +481,7 @@ describe('extractNoticeFromBuffer orchestration', () => {
       new Uint8Array(),
       'file://Not_35_of_2026.pdf',
       fakeOpenAI(create),
+      { now: activeNot35Now },
     );
 
     expect(create).toHaveBeenCalledTimes(1);
@@ -341,27 +504,34 @@ describe('extractNoticeFromBuffer orchestration', () => {
       new Uint8Array(),
       'file://Not_35_of_2026.pdf',
       fakeOpenAI(create),
+      { now: activeNot35Now },
     );
 
     expect(out[0].areas.length).toBeGreaterThan(0);
     expect(out[0].description).toContain('New restriction.');
   });
 
-  it('skips enrichment and yields no records for an already-expired notice', async () => {
+  it('skips enrichment but still yields a record for an already-expired notice', async () => {
     jest
       .spyOn(core, 'readPdfTextFromBuffer')
       .mockResolvedValue(fixture('Not_35_of_2026'));
     const create = jest.fn();
 
     // Not_35_of_2026 is valid through 2026-06-08; reference a later "now".
+    const now = new Date('2026-06-09T00:00:00.000Z');
     const out = await extractNoticeFromBuffer(
       new Uint8Array(),
       'file://Not_35_of_2026.pdf',
       fakeOpenAI(create),
-      { now: new Date('2026-06-09T00:00:00.000Z') },
+      { now },
     );
 
-    expect(out).toHaveLength(0);
+    // The record is persisted (its past activeTo hides it from public getters
+    // and its source dedups the URL out of future scrape cycles); only the
+    // pointless LLM call is skipped.
+    expect(out).toHaveLength(1);
+    expect(out[0].activeTo).toBeDefined();
+    expect(out[0].activeTo!.getTime()).toBeLessThan(now.getTime());
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -375,10 +545,75 @@ describe('extractNoticeFromBuffer orchestration', () => {
       new Uint8Array(),
       'file://Not_35_of_2026.pdf',
       fakeOpenAI(create),
-      { now: new Date('2026-06-08T15:00:00.000Z') },
+      { now: activeNot35Now },
     );
 
     expect(out).toHaveLength(1);
+  });
+
+  it('flags the record for review when vision verification reports a mismatch', async () => {
+    jest
+      .spyOn(core, 'readPdfTextFromBuffer')
+      .mockResolvedValue(fixture('Not_35_of_2026'));
+    jest.spyOn(visionVerify, 'verifyExtractionWithVision').mockResolvedValue({
+      verdict: 'mismatch',
+      discrepancies: ['chart shows a wedge ABC, extraction has 3 bare points'],
+      summary: 'Chart depicts sector ABC.',
+    });
+
+    const out = await extractNoticeFromBuffer(
+      new Uint8Array(),
+      'file://Not_35_of_2026.pdf',
+      fakeOpenAI(jest.fn()),
+      { now: activeNot35Now, enrich: false, visionVerify: true },
+    );
+
+    expect(out[0].needsReview).toBe(true);
+    expect(
+      out[0].reviewReasons.some((r) => r.startsWith('vision_mismatch:')),
+    ).toBe(true);
+    // Geometry is untouched by the verdict.
+    expect(out[0].areas.length).toBeGreaterThan(0);
+  });
+
+  it('keeps a vision match informational — no review flag', async () => {
+    jest
+      .spyOn(core, 'readPdfTextFromBuffer')
+      .mockResolvedValue(fixture('Not_35_of_2026'));
+    jest.spyOn(visionVerify, 'verifyExtractionWithVision').mockResolvedValue({
+      verdict: 'match',
+      discrepancies: [],
+      summary: 'Chart matches the extracted sector.',
+    });
+
+    const out = await extractNoticeFromBuffer(
+      new Uint8Array(),
+      'file://Not_35_of_2026.pdf',
+      fakeOpenAI(jest.fn()),
+      { now: activeNot35Now, enrich: false, visionVerify: true },
+    );
+
+    expect(out[0].needsReview).toBe(false);
+  });
+
+  it('keeps the deterministic result when vision verification throws', async () => {
+    jest
+      .spyOn(core, 'readPdfTextFromBuffer')
+      .mockResolvedValue(fixture('Not_35_of_2026'));
+    jest
+      .spyOn(visionVerify, 'verifyExtractionWithVision')
+      .mockRejectedValue(new Error('model offline'));
+
+    const out = await extractNoticeFromBuffer(
+      new Uint8Array(),
+      'file://Not_35_of_2026.pdf',
+      fakeOpenAI(jest.fn()),
+      { now: activeNot35Now, enrich: false, visionVerify: true },
+    );
+
+    expect(out).toHaveLength(1);
+    expect(out[0].areas.length).toBeGreaterThan(0);
+    expect(out[0].needsReview).toBe(false);
   });
 
   it('skips the AI call entirely when enrich is disabled', async () => {

@@ -13,6 +13,13 @@ RUN npm run build
 FROM ${NODE_IMAGE} AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# Deploy identifier baked into the image so the running app self-reports the
+# exact commit it was built from. MUST match the release passed to
+# `npm run sentry:sourcemaps` (both are $(git rev-parse HEAD) in CI) or Sentry
+# can't resolve uploaded source maps. Empty for plain `docker build` — Sentry
+# then groups events under "no release", which is harmless in dev.
+ARG SENTRY_RELEASE=""
+ENV SENTRY_RELEASE=${SENTRY_RELEASE}
 COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=builder --chown=node:node /app/dist ./dist

@@ -7,7 +7,7 @@ describe('DatasetCatalogService', () => {
 
   beforeEach(async () => {
     service = new DatasetCatalogService();
-    await service.onApplicationBootstrap();
+    await service.onModuleInit();
   });
 
   it('loads committed GeoJSON datasets into sorted metadata', () => {

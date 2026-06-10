@@ -1,0 +1,7 @@
+# sentry-cli config for source-map uploads. Org/project are public; the auth
+# token is a SECRET and MUST be supplied via the SENTRY_AUTH_TOKEN env var (an
+# `sntrys_…` org token, which encodes the EU/de.sentry.io region — do NOT set
+# `url` here, the token routes to the correct region on its own).
+[defaults]
+org=bluebahar
+project=backend

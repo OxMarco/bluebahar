@@ -5,6 +5,7 @@ import {
   Index,
   PrimaryGeneratedColumn,
   Unique,
+  UpdateDateColumn,
 } from 'typeorm';
 import { NoticeKind } from '../notice-kind';
 
@@ -54,8 +55,8 @@ export class NoticeToMariners {
   locationLabel?: string;
 
   // Distinct geographic parts. The API serializer (notice-serializer.ts) maps
-  // this into a single GeoJSON geometry per notice (or GeometryCollection when
-  // there are multiple parts).
+  // this into a GeoJSON FeatureCollection with one Feature per part (Mapbox GL
+  // won't render GeometryCollections).
   @Column({ type: 'jsonb', default: () => "'[]'" })
   areas!: NoticeGeometryPart[];
 
@@ -90,4 +91,10 @@ export class NoticeToMariners {
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
+
+  // Touched on every write (approve, dismiss-reports, report increment, …).
+  // The cache manifest's notices.rev hashes MAX(updatedAt) — createdAt alone
+  // misses review-flag flips, which don't create rows.
+  @UpdateDateColumn({ type: 'timestamptz' })
+  updatedAt!: Date;
 }

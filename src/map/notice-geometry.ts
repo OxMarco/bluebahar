@@ -1,19 +1,23 @@
 import { bbox } from '@turf/bbox';
 import { distance } from '@turf/distance';
-import { lineString, pointOnFeature, polygon } from '@turf/turf';
+import { lineString, polygon } from '@turf/helpers';
+import { pointOnFeature } from '@turf/point-on-feature';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
 
 type EntityPart = NoticeToMariners['areas'][number];
 type GeoCoordinate = { latitude: number; longitude: number };
 type GeoBoundingCircle = { center: GeoCoordinate; radiusMetres: number };
 
-function isFinitePoint(p: { lat: number; long: number }): boolean {
+// `areas` is an unconstrained jsonb column, so null/NaN coordinates do occur.
+// Exported so the serializer filters the SAME points this module does — the
+// two must never disagree about a part's usable coordinates.
+export function isFinitePoint(p: { lat: number; long: number }): boolean {
   return Number.isFinite(p.lat) && Number.isFinite(p.long);
 }
 
 // GeoJSON linear rings must be closed (first position === last). Shared by the
 // serializer and the anchor logic so both close a ring the same way.
-export function isRingClosed(coords: [number, number][]): boolean {
+function isRingClosed(coords: [number, number][]): boolean {
   if (coords.length < 2) return false;
   const a = coords[0];
   const b = coords[coords.length - 1];
@@ -81,15 +85,6 @@ export function representativePoints(
     if (anchor) points.push(anchor);
   }
   return points;
-}
-
-// Single anchor for the "near here" reference point and the safety-berth
-// circle — the first usable part, preserving the historical first-part bias.
-// Null only when a notice has no usable geometry (same case as `geometry: null`).
-export function representativePoint(
-  entity: NoticeToMariners,
-): GeoCoordinate | null {
-  return representativePoints(entity)[0] ?? null;
 }
 
 // Smallest axis-aligned bounding circle around every coordinate in the notice,

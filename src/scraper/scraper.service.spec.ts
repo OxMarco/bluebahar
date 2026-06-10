@@ -29,6 +29,7 @@ function jobId(url: string): string {
 describe('ScraperService', () => {
   let repoFind: jest.MockedFunction<Repository<NoticeToMariners>['find']>;
   let getJobs: jest.MockedFunction<Queue['getJobs']>;
+  let getJob: jest.MockedFunction<Queue['getJob']>;
   let add: jest.MockedFunction<Queue['add']>;
   let logsDelete: jest.MockedFunction<Repository<Logs>['delete']>;
   let service: ScraperService;
@@ -38,12 +39,16 @@ describe('ScraperService', () => {
       Repository<NoticeToMariners>['find']
     >;
     getJobs = jest.fn() as jest.MockedFunction<Queue['getJobs']>;
+    getJob = jest.fn().mockResolvedValue(undefined) as jest.MockedFunction<
+      Queue['getJob']
+    >;
     add = jest.fn() as jest.MockedFunction<Queue['add']>;
     logsDelete = jest.fn() as jest.MockedFunction<Repository<Logs>['delete']>;
 
     const queue = {
       add,
       getJobs,
+      getJob,
     } as unknown as Queue;
     const config = {
       getOrThrow: jest.fn(() => 2),
@@ -107,6 +112,28 @@ describe('ScraperService', () => {
       },
       { jobId: jobId('https://example.com/new-2.pdf') },
     );
+  });
+
+  it('retries a previously failed job instead of silently skipping its URL', async () => {
+    listNoticeLinksMock.mockResolvedValue([
+      link('https://example.com/failed.pdf'),
+    ]);
+    repoFind.mockResolvedValue([]);
+    getJobs.mockResolvedValue([]);
+    const retry = jest.fn();
+    getJob.mockResolvedValue({
+      isFailed: jest.fn().mockResolvedValue(true),
+      retry,
+    } as unknown as Job);
+
+    await expect(service.scrapeNoticeToMariners()).resolves.toEqual({
+      message: 'Enqueued',
+      enqueued: 1,
+    });
+    // The failed job is retried in place; add() with the same jobId would be
+    // a silent no-op while the job sits in the failed set.
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(add).not.toHaveBeenCalled();
   });
 
   it('does not enqueue when every discovered notice is already stored', async () => {

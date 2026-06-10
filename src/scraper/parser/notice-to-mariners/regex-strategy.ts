@@ -13,6 +13,8 @@ import {
   inBbox,
   resolveLabels,
   DEGREE_MARK,
+  LAT_HEMI,
+  LON_HEMI,
   type RawCoord,
 } from './core';
 import { distanceKm } from './spatial';
@@ -219,9 +221,20 @@ type PosCoord = {
 };
 
 const GEN_ROW = new RegExp(
-  String.raw`(?:\b([A-Z]\d?|\d{1,3}[A-Z])\.?\s+)?(\d{2,3})\s*${DEGREE_MARK}\s*(\d{2})\s*['\u2032]\s*\.?\s*(\d{1,3})\s+(0?\d{2,3})\s*${DEGREE_MARK}\s*(\d{2})\s*['\u2032]\s*\.?\s*(\d{1,3})`,
+  String.raw`(?:\b([A-Z]\d?|\d{1,3}[A-Za-z])\.?\s+)?(\d{2,3})\s*${DEGREE_MARK}\s*(\d{2})\s*['\u2032]\s*\.?\s*(\d{1,3})${LAT_HEMI}\s+(0?\d{2,3})\s*${DEGREE_MARK}\s*(\d{2})\s*['\u2032]\s*\.?\s*(\d{1,3})${LON_HEMI}`,
   'g',
 );
+
+// Some notices label coordinates on the line ABOVE the row ("Position B:
+// LATITUDE (N) LONGITUDE (E)\n36\u00b0 03'.620 ..."), so the row itself carries no
+// label. Recover it from the immediately preceding text.
+const POSITION_BACKREF_RE =
+  /\b(?:position|point)\s+([A-Z]\d?)\s*:?\s*(?:LATITUDE\s*\(N\)\s*LONGITUDE\s*\(E\)\s*)?$/i;
+
+function backrefLabel(text: string, idx: number): string | null {
+  const m = text.slice(Math.max(0, idx - 70), idx).match(POSITION_BACKREF_RE);
+  return m ? m[1] : null;
+}
 
 function scanCoords(text: string): {
   coords: PosCoord[];
@@ -236,7 +249,7 @@ function scanCoords(text: string): {
     const coord = {
       idx: m.index,
       end: m.index + m[0].length,
-      label: m[1] ?? null,
+      label: m[1] ?? backrefLabel(text, m.index),
       lat,
       lon,
       raw: m[0].trim(),
@@ -270,6 +283,291 @@ function titleNear(text: string, idx: number): string | null {
   return null;
 }
 
+// Heading-ish line immediately above a coordinate block ("A) In Wied il-Ghasri
+// (Gozo), the area joining the points A1, A2 and the intermediate coastline…"
+// -> "In Wied il-Ghasri (Gozo)"). Returns null for table headers, boilerplate
+// ("The limits of these areas are as follows:") and coordinate-row residue, so
+// callers fall back to the notice title — without this, every area of a
+// multi-block notice gets named after the global title and the per-block place
+// names in the source are lost.
+function blockTitle(text: string, idx: number): string | null {
+  // Headings wrap across PDF text lines ("A) In Wied il-Ghasri (Gozo), the
+  // area joining the points A1, A2 and the intermediate\ncoastline as shown
+  // on attached chart A."), so join the preceding lines — dropping table
+  // headers, page markers and coordinate rows — and take the last sentence.
+  const degreeRow = new RegExp(String.raw`\d{1,3}\s*${DEGREE_MARK}`);
+  const lines = text
+    .slice(Math.max(0, idx - 400), idx)
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .filter(
+      (l) =>
+        !/latitude|longitude|^points?\b|^position\b|^\(?[NE]\)?$/i.test(l) &&
+        !/^--\s*\d+\s+of\s+\d+\s*--$/.test(l) &&
+        !degreeRow.test(l),
+    );
+  if (!lines.length) return null;
+  const joined = lines.join(' ');
+  // An enumeration marker ("Q) In Il-Port il-Kbir …") anchors the heading
+  // exactly; sentence splitting alone trips over abbreviations ("St. Peter's
+  // Pool") and unterminated tails of the previous block.
+  let t: string | undefined;
+  const markers = [...joined.matchAll(/(?:^|\s)[A-Z]\)\s+[A-Z]/g)];
+  const last = markers[markers.length - 1];
+  if (last) {
+    t = joined.slice(last.index).trim();
+  } else {
+    const chunks = joined
+      .split(/(?<=[.!?])\s+|:\s*-?\s*/)
+      .map((s) => s.trim())
+      .filter((s) => /[A-Za-z]{3,}/.test(s));
+    t = chunks[chunks.length - 1];
+  }
+  if (!t) return null;
+  if (/\b(?:as follows|the following|are as|limits of)\b/i.test(t)) return null;
+  if (/^\d{1,2}\s+[A-Za-z]+\s+\d{4}$/.test(t)) return null;
+  const cleaned = t
+    .replace(/^[A-Z]\)\s*/, '')
+    // Cut at the first subordinate clause (", the area joining …", ", a
+    // floating platform will be laid …") — the heading proper is what
+    // precedes it.
+    .replace(/,\s+(?=[a-z])[\s\S]*$/, '')
+    .replace(/\s+as\s+shown\b[\s\S]*$/i, '')
+    .replace(/\s*(?:shore|fairway)\s+point\s*$/i, '')
+    .replace(/[,;:.\s]+$/, '')
+    .trim()
+    .slice(0, 90);
+  return cleaned.length >= 3 ? cleaned : null;
+}
+
+// A gap between two coordinate rows that is pure boundary-recipe prose
+// ("thence on a bearing of 335 True x 8.5 nautical miles to: Position B")
+// links the rows into ONE shape; any other prose splits them into separate
+// areas. The residue check rejects gaps that merely START with "thence" but
+// continue into unrelated paragraphs.
+function isRecipeLink(gap: string): boolean {
+  if (!/^\s*[(,;.]?\s*thence\b/i.test(gap)) return false;
+  const residue = gap
+    .replace(
+      /latitude|longitude|position|point|thence|bearing|true|arc|circle|radius|nautical|miles?|cent(?:red|ered|re|er)|degrees?/gi,
+      ' ',
+    )
+    .replace(/\b(?:on|of|to|an|a|and|the|x)\b/gi, ' ')
+    .replace(/[^A-Za-z]/g, '');
+  return residue.length <= 12;
+}
+
+// Walk forward from `from`, chaining coordinates linked by recipe gaps. For
+// the AFM firing-area recipes this recovers the full boundary (centre + rim)
+// that prose-gap clustering would otherwise split point-by-point.
+function thenceChain(
+  coords: PosCoord[],
+  from: PosCoord,
+  text: string,
+): PosCoord[] {
+  const chain = [from];
+  for (let i = coords.indexOf(from); i + 1 < coords.length; i++) {
+    if (!isRecipeLink(text.slice(coords[i].end, coords[i + 1].idx))) break;
+    chain.push(coords[i + 1]);
+  }
+  return chain;
+}
+
+// NM-radius mentions anchor circles and sectors. Both word orders occur in the
+// source ("a radius of 4 Nautical miles", "8 Nautical Mile Radius") and the
+// "of" is frequently omitted ("radius 8.5 nautical miles").
+const RADIUS_NM_RE =
+  /\bradius\s+(?:of\s+)?([\d.]+)\s*(?:NM\b|nautical\s+miles?)|([\d.]+)\s*(?:NM|nautical\s+miles?)\s+radius\b/gi;
+
+// The centre of a radius mention: an explicit "centred on position/point X"
+// label reference wins; then the legacy "centre point" phrase (centre = last
+// coordinate stated before it); then the first free coordinate.
+function resolveCentre(
+  text: string,
+  mentionIdx: number,
+  free: PosCoord[],
+): PosCoord | null {
+  if (!free.length) return null;
+  const near = text.slice(mentionIdx, mentionIdx + 250);
+  const labelled = near.match(
+    /cent(?:re|er)d?\s+(?:on|at)\s+(?:position|point)\s+([A-Z]\d?)\b/i,
+  );
+  if (labelled) {
+    const hit = free.find((c) => c.label === labelled[1]);
+    if (hit) return hit;
+  }
+  const ci = text.search(/cent(?:re|er)\s*point/i);
+  if (ci >= 0) {
+    const before = free.filter((c) => c.idx < ci);
+    if (before.length) return before[before.length - 1];
+  }
+  return free[0];
+}
+
+// One circle/sector per "radius X NM" mention. Earlier code took only the
+// FIRST mention and returned immediately, so a notice with two firing areas
+// (Gunex: a Pembroke sector AND a Melita circle) lost everything but one
+// shape, and corridors in the same notice were dropped with it. Consumed
+// coordinates are marked so the catch-all below only sees the rest.
+function radiusAreas(
+  text: string,
+  coords: PosCoord[],
+  notice: string,
+  title: string | null,
+  hazard: string,
+  consumed: Set<PosCoord>,
+): Area[] {
+  const mentions = [...text.matchAll(RADIUS_NM_RE)];
+  const out: Area[] = [];
+  for (let i = 0; i < mentions.length; i++) {
+    const m = mentions[i];
+    const radius_nm = Number(m[1] ?? m[2]);
+    if (!Number.isFinite(radius_nm) || radius_nm <= 0) continue;
+    // Each mention owns the text between its neighbours, so coordinates can't
+    // be claimed by a far-away radius phrase.
+    const start =
+      i === 0 ? 0 : mentions[i - 1].index + mentions[i - 1][0].length;
+    const end = mentions[i + 1]?.index ?? text.length;
+    const free = coords.filter(
+      (c) => !consumed.has(c) && c.idx >= start && c.idx < end,
+    );
+    const centre = resolveCentre(text, m.index, free);
+    if (!centre) continue;
+    // Rim points: prefer the explicit boundary recipe chained off the centre
+    // ("thence … to Position B thence on an arc … to Position C"); fall back
+    // to "free points at roughly the stated radius from the centre".
+    let rim = thenceChain(
+      coords.filter((c) => !consumed.has(c)),
+      centre,
+      text,
+    ).slice(1);
+    if (rim.length < 2) {
+      const km = radius_nm * 1.852;
+      rim = free.filter(
+        (c) => c !== centre && Math.abs(distanceKm(centre, c) - km) < km * 0.25,
+      );
+    }
+    const idSuffix = mentions.length > 1 ? `-${i + 1}` : '';
+    const mk = (c: PosCoord, j: number) => ({
+      label: c.label ?? (j === 0 ? 'A' : `P${j}`),
+      lat: c.lat,
+      lon: c.lon,
+    });
+    consumed.add(centre);
+    if (rim.length >= 2) {
+      rim.forEach((c) => consumed.add(c));
+      out.push({
+        area_id: `${notice}-sector${idSuffix}`,
+        name: title ?? titleNear(text, centre.idx) ?? 'Restricted area',
+        chart: null,
+        zone_color: null,
+        hazard_type: hazard,
+        operation: 'new',
+        geometry_kind: 'sector',
+        point_labels: [centre, ...rim].map((c, j) => mk(c, j).label),
+        points: [centre, ...rim].map(mk),
+        radius_nm,
+        buffer_m: null,
+        restrictions: [
+          `Sector of radius ${radius_nm} NM between the two rim radii`,
+        ],
+      });
+    } else {
+      out.push({
+        area_id: `${notice}-circle${idSuffix}`,
+        name: title ?? titleNear(text, centre.idx) ?? 'Restricted area',
+        chart: null,
+        zone_color: null,
+        hazard_type: hazard,
+        operation: 'new',
+        geometry_kind: 'circle',
+        point_labels: [centre.label ?? 'A'],
+        points: [
+          { label: centre.label ?? 'A', lat: centre.lat, lon: centre.lon },
+        ],
+        radius_nm,
+        buffer_m: null,
+        restrictions: [`Circle radius ${radius_nm} NM about centre point`],
+      });
+    }
+  }
+  return out;
+}
+
+// "A1".."A4" share prefix "A"; "1a".."1f" share prefix "1". Bare labels ("A",
+// "P3") have no prefix.
+function labelPrefix(label: string | null): string | null {
+  if (!label) return null;
+  const m =
+    label.match(/^([A-Za-z])(\d{1,3})$/) ??
+    label.match(/^(\d{1,3})([A-Za-z])$/);
+  return m ? m[1] : null;
+}
+
+type Block = { pts: PosCoord[]; prefix: string | null };
+
+// A contiguous coordinate table often lists SEVERAL zones back to back
+// (Mellieha: A1..A4 B1..B6 … N1..N4 with nothing but the labels separating
+// them). Joining them into one ring produces the self-intersecting zigzags
+// this splitter exists to prevent: when every point is labelled and the
+// labels form ≥2 contiguous prefix runs of ≥2 points, each run is its own
+// zone.
+function splitByLabelPrefix(group: PosCoord[]): Block[] {
+  const whole: Block[] = [{ pts: group, prefix: null }];
+  if (group.length < 4) return whole;
+  const prefixes = group.map((c) => labelPrefix(c.label));
+  if (prefixes.some((p) => p === null)) return whole;
+  const runs: PosCoord[][] = [[group[0]]];
+  for (let i = 1; i < group.length; i++) {
+    if (prefixes[i] === prefixes[i - 1]) runs[runs.length - 1].push(group[i]);
+    else runs.push([group[i]]);
+  }
+  if (runs.length < 2 || runs.some((r) => r.length < 2)) return whole;
+  const seen = new Set<string>();
+  for (const r of runs) {
+    const p = labelPrefix(r[0].label)!;
+    if (seen.has(p)) return whole; // interleaved labels: not a zone table
+    seen.add(p);
+  }
+  return runs.map((pts) => ({ pts, prefix: labelPrefix(pts[0].label) }));
+}
+
+// Per-row annotations: "… Shore" / "(Shore)" AFTER the row marks a point on
+// the shoreline; "Shore Point …" / "Fairway Point …" BEFORE the row is the
+// launch-lane table layout.
+function shoreAnnotated(text: string, c: PosCoord): boolean {
+  return /^\s*\(?\s*shore\b/i.test(text.slice(c.end, c.end + 12));
+}
+
+function rowAnnotation(text: string, c: PosCoord): 'shore' | 'fairway' | null {
+  const back = text.slice(Math.max(0, c.idx - 30), c.idx);
+  if (/fairway\s+point\s*$/i.test(back)) return 'fairway';
+  if (/shore\s+point\s*$/i.test(back)) return 'shore';
+  return null;
+}
+
+// A launch-lane quad is listed as Shore, Fairway, Shore, Fairway (two cross
+// lines); ringing them in that order draws a bow-tie. Swap the second pair.
+function laneOrdered(text: string, pts: PosCoord[]): PosCoord[] {
+  if (pts.length !== 4) return pts;
+  const ann = pts.map((c) => rowAnnotation(text, c));
+  if (
+    ann[0] === 'shore' &&
+    ann[1] === 'fairway' &&
+    ann[2] === 'shore' &&
+    ann[3] === 'fairway'
+  )
+    return [pts[0], pts[1], pts[3], pts[2]];
+  return pts;
+}
+
+// Phrases that mean "this open line is closed by the shore". Checked against
+// the prose immediately before each block (not the whole notice, which would
+// leak one block's closure onto every other block in the document).
+const COASTLINE_CUE =
+  /intermediate\s+coastline|the\s+coastline|either\s+side\s+of\s+the\s+bay|foreshore/i;
+
 function genericAreas(
   text: string,
   notice: string,
@@ -286,63 +584,13 @@ function genericAreas(
   if (!coords.length) return [];
   const hazard = inferHazardType(text);
 
-  // A) Circle / sector: "a radius of X NM" centred on a point.
-  const rad = text.match(/radius of\s*([\d.]+)\s*(?:NM|nautical\s+miles)/i);
-  if (rad) {
-    const ci = text.search(/cent(?:re|er)\s*point/i);
-    const centre =
-      ci >= 0 && coords.filter((c) => c.idx < ci).length
-        ? coords.filter((c) => c.idx < ci).slice(-1)[0]
-        : coords[0];
-    const radius_nm = Number(rad[1]);
-    const km = radius_nm * 1.852;
-    const rim = coords
-      .filter((c) => c !== centre)
-      .filter((c) => Math.abs(distanceKm(centre, c) - km) < km * 0.25);
-    const mk = (c: PosCoord, i: number) => ({
-      label: c.label ?? (i === 0 ? 'A' : `P${i}`),
-      lat: c.lat,
-      lon: c.lon,
-    });
-    if (rim.length >= 2) {
-      return [
-        {
-          area_id: `${notice}-sector`,
-          name: title ?? titleNear(text, centre.idx) ?? 'Restricted area',
-          chart: null,
-          zone_color: null,
-          hazard_type: hazard,
-          operation: 'new',
-          geometry_kind: 'sector',
-          point_labels: [centre, ...rim].map((c, i) => mk(c, i).label),
-          points: [centre, ...rim].map(mk),
-          radius_nm,
-          buffer_m: null,
-          restrictions: [
-            `Sector of radius ${rad[1]} NM between the two rim radii`,
-          ],
-        },
-      ];
-    }
-    return [
-      {
-        area_id: `${notice}-circle`,
-        name: title ?? titleNear(text, centre.idx) ?? 'Restricted area',
-        chart: null,
-        zone_color: null,
-        hazard_type: hazard,
-        operation: 'new',
-        geometry_kind: 'circle',
-        point_labels: [centre.label ?? 'A'],
-        points: [
-          { label: centre.label ?? 'A', lat: centre.lat, lon: centre.lon },
-        ],
-        radius_nm,
-        buffer_m: null,
-        restrictions: [`Circle radius ${rad[1]} NM about centre point`],
-      },
-    ];
-  }
+  // A) Circles / sectors anchored on "radius X NM" mentions. Consumes the
+  // centre + rim coordinates; corridors and other tables in the same notice
+  // fall through to the catch-all below instead of being dropped.
+  const consumed = new Set<PosCoord>();
+  const areas = radiusAreas(text, coords, notice, title, hazard, consumed);
+  const remaining = coords.filter((c) => !consumed.has(c));
+  if (!remaining.length) return areas;
 
   // B) "<Name> - The area bounded/formed by the imaginary line A to B [to C] and
   //    the intermediate coastline (chart N)." — one polygon per block.
@@ -350,19 +598,19 @@ function genericAreas(
     /([^\n.]{3,90}?)\s*[-–]\s*The\s+area\s+(?:bounded|formed)\s+by\s+the\s+imaginary\s+line\s+([A-Z0-9][\sA-Z0-9to]*?)\s+and\s+the\s+intermediate\s+coastline[^.]*?(?:chart\s*(\d+))?\)?\./gi;
   const anchors = [...text.matchAll(anchorRe)];
   if (anchors.length) {
-    const areas: Area[] = [];
+    const coastAreas: Area[] = [];
     for (let i = 0; i < anchors.length; i++) {
       const a = anchors[i];
       const next = anchors[i + 1]?.index ?? text.length;
       const labels = a[2].match(/[A-Z]\d?/g) ?? [];
-      const span = coords.filter((c) => c.idx >= a.index && c.idx < next);
+      const span = remaining.filter((c) => c.idx >= a.index && c.idx < next);
       const pts = span.slice(0, Math.max(labels.length, 2)).map((c, j) => ({
         label: labels[j] ?? c.label ?? `P${j + 1}`,
         lat: c.lat,
         lon: c.lon,
       }));
       if (pts.length < 2) continue;
-      areas.push({
+      coastAreas.push({
         area_id: `${notice}-coast-${i + 1}`,
         name: a[1].trim(),
         chart: a[3] ? `Chart ${a[3]}` : null,
@@ -377,61 +625,103 @@ function genericAreas(
         restrictions: [],
       });
     }
-    if (areas.length) return areas;
+    if (coastAreas.length) return [...areas, ...coastAreas];
   }
 
   // C) Catch-all: cluster coordinate rows into areas, splitting where descriptive
-  //    prose sits between two rows. A lone coordinate is plotted as a Point
-  //    exactly where the notice states it (no inference, so it needs no review);
-  //    only the multi-point shapes we *join* here (lines/polygons) are flagged.
+  //    prose sits between two rows (recipe prose like "thence on a bearing …"
+  //    links rows instead of splitting them), then split label-prefixed zone
+  //    tables. A lone coordinate is plotted as a Point exactly where the notice
+  //    states it (no inference, so it needs no review); only the multi-point
+  //    shapes we *join* here (lines/polygons) are flagged.
   const groups: PosCoord[][] = [];
   let cur: PosCoord[] = [];
-  for (let i = 0; i < coords.length; i++) {
+  for (let i = 0; i < remaining.length; i++) {
     if (i > 0) {
-      const gap = text
-        .slice(coords[i - 1].end, coords[i].idx)
+      const gapText = text.slice(remaining[i - 1].end, remaining[i].idx);
+      const gap = gapText
         .replace(/latitude|longitude|point|position|\(n\)|\(e\)/gi, '')
         .replace(/[^A-Za-z]/g, '');
-      if (gap.length > 10) {
+      if (gap.length > 10 && !isRecipeLink(gapText)) {
         if (cur.length) groups.push(cur);
         cur = [];
       }
     }
-    cur.push(coords[i]);
+    cur.push(remaining[i]);
   }
   if (cur.length) groups.push(cur);
 
+  const blocks: Array<Block & { group: number }> = groups.flatMap((g, gi) =>
+    splitByLabelPrefix(g).map((b) => ({ ...b, group: gi })),
+  );
   const cable = /cable/i.test(text);
-  const coastline = /intermediate coastline|the\s+coastline/i.test(text);
-  const kindFor = (g: PosCoord[]): GeometryKind =>
-    cable
-      ? 'linestring'
-      : coastline && g.length >= 2
-        ? 'polygon_coastline'
-        : g.length >= 3
-          ? 'polygon'
-          : g.length === 2
-            ? 'linestring'
-            : 'point';
+  const kindOf = (b: Block, i: number): GeometryKind => {
+    if (cable) return 'linestring';
+    const g = b.pts;
+    // The closure cue must sit in THIS block's introduction: from the previous
+    // block's last row (or a bounded look-back for the first block) to the
+    // block's first row.
+    const ctxStart =
+      i === 0
+        ? Math.max(0, g[0].idx - 700)
+        : blocks[i - 1].pts[blocks[i - 1].pts.length - 1].end;
+    const context = text.slice(ctxStart, g[0].idx);
+    const coast =
+      COASTLINE_CUE.test(context) ||
+      (g.length >= 2 &&
+        shoreAnnotated(text, g[0]) &&
+        shoreAnnotated(text, g[g.length - 1]));
+    return coast && g.length >= 2
+      ? 'polygon_coastline'
+      : g.length >= 3
+        ? 'polygon'
+        : g.length === 2
+          ? 'linestring'
+          : 'point';
+  };
   // Only the inferred multi-point shapes need a human to verify the geometry; a
   // single coordinate is unambiguous, so a notice that yields only Points is not
   // flagged and stays public.
-  if (groups.some((g) => kindFor(g) !== 'point'))
+  if (blocks.some((b, i) => kindOf(b, i) !== 'point'))
     notes.push('generic_extraction_verify_geometry');
-  return groups.map((g, i) => {
-    const kind = kindFor(g);
+
+  // One base name per source GROUP, looked up at the group's first row: the
+  // prefix-split zones of one table share the table's heading (suffixed with
+  // their zone tag below), they don't each scavenge the rows above them.
+  const groupBases = groups.map(
+    (g) =>
+      (blocks.length > 1 ? blockTitle(text, g[0].idx) : null) ??
+      title ??
+      titleNear(text, g[0].idx) ??
+      'Area',
+  );
+  const bases = blocks.map((b) => groupBases[b.group]);
+  const blockAreas = blocks.map((b, i): Area => {
+    const kind = kindOf(b, i);
     const guessed = kind !== 'point';
-    const base = title ?? titleNear(text, g[0].idx) ?? 'Area';
+    const pts = kind === 'polygon' ? laneOrdered(text, b.pts) : b.pts;
+    let name = bases[i];
+    if (b.prefix) {
+      const tag = /^[A-Za-z]$/.test(b.prefix)
+        ? `Zone ${b.prefix.toUpperCase()}`
+        : `Area ${b.prefix}`;
+      name = `${name} — ${tag}`;
+    } else if (
+      blocks.length > 1 &&
+      bases.filter((x) => x === bases[i]).length > 1
+    ) {
+      name = `${name} — area ${i + 1}`;
+    }
     return {
       area_id: `${notice}-area-${i + 1}`,
-      name: groups.length > 1 ? `${base} — area ${i + 1}` : base,
+      name,
       chart: null,
       zone_color: null,
       hazard_type: hazard,
       operation: 'new',
       geometry_kind: kind,
-      point_labels: g.map((c, j) => c.label ?? `P${j + 1}`),
-      points: g.map((c, j) => ({
+      point_labels: pts.map((c, j) => c.label ?? `P${j + 1}`),
+      points: pts.map((c, j) => ({
         label: c.label ?? `P${j + 1}`,
         lat: c.lat,
         lon: c.lon,
@@ -441,6 +731,7 @@ function genericAreas(
       restrictions: guessed ? ['generic extraction — verify geometry'] : [],
     };
   });
+  return [...areas, ...blockAreas];
 }
 
 function buildAreas(

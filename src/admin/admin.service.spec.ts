@@ -36,11 +36,15 @@ function makeNotice(
   return notice;
 }
 
+const writeResult = (affected: number) => ({
+  affected,
+  raw: [],
+  generatedMaps: [],
+});
+
 describe('AdminService', () => {
   let noticeFind: jest.MockedFunction<Repository<NoticeToMariners>['find']>;
-  let noticeFindOneBy: jest.MockedFunction<
-    Repository<NoticeToMariners>['findOneBy']
-  >;
+  let noticeUpdate: jest.MockedFunction<Repository<NoticeToMariners>['update']>;
   let noticeSave: jest.MockedFunction<Repository<NoticeToMariners>['save']>;
   let noticeCreate: jest.MockedFunction<Repository<NoticeToMariners>['create']>;
   let noticeDelete: jest.MockedFunction<Repository<NoticeToMariners>['delete']>;
@@ -52,7 +56,7 @@ describe('AdminService', () => {
 
   beforeEach(() => {
     noticeFind = jest.fn();
-    noticeFindOneBy = jest.fn();
+    noticeUpdate = jest.fn();
     noticeSave = jest.fn((n: NoticeToMariners) => Promise.resolve(n)) as never;
     noticeCreate = jest.fn((n: Partial<NoticeToMariners>) => n) as never;
     noticeDelete = jest.fn();
@@ -63,7 +67,7 @@ describe('AdminService', () => {
 
     const noticeRepo = {
       find: noticeFind,
-      findOneBy: noticeFindOneBy,
+      update: noticeUpdate,
       save: noticeSave,
       create: noticeCreate,
       delete: noticeDelete,
@@ -137,7 +141,7 @@ describe('AdminService', () => {
       const options = noticeFind.mock.calls[0]?.[0];
       expect(options).toEqual(
         expect.objectContaining({
-          order: { reports: 'DESC' },
+          order: { reports: 'DESC', createdAt: 'DESC' },
           take: 51,
           skip: 0,
         }),
@@ -164,23 +168,19 @@ describe('AdminService', () => {
 
   describe('approveNtM', () => {
     it('clears needsReview and reasons without touching reports', async () => {
-      const notice = makeNotice({
-        needsReview: true,
-        reports: 4,
-        reviewReasons: ['generic_extraction_verify_geometry'],
-      });
-      noticeFindOneBy.mockResolvedValue(notice);
+      const notice = makeNotice();
+      noticeUpdate.mockResolvedValue(writeResult(1));
 
       await service.approveNtM(notice.id);
 
-      expect(notice.needsReview).toBe(false);
-      expect(notice.reviewReasons).toEqual([]);
-      expect(notice.reports).toBe(4);
-      expect(noticeSave).toHaveBeenCalledWith(notice);
+      expect(noticeUpdate).toHaveBeenCalledWith(notice.id, {
+        needsReview: false,
+        reviewReasons: [],
+      });
     });
 
     it('throws NotFound for an unknown id', async () => {
-      noticeFindOneBy.mockResolvedValue(null);
+      noticeUpdate.mockResolvedValue(writeResult(0));
 
       await expect(service.approveNtM('missing')).rejects.toThrow(
         NotFoundException,
@@ -190,18 +190,16 @@ describe('AdminService', () => {
 
   describe('dismissReports', () => {
     it('resets reports without touching needsReview', async () => {
-      const notice = makeNotice({ needsReview: true, reports: 9 });
-      noticeFindOneBy.mockResolvedValue(notice);
+      const notice = makeNotice();
+      noticeUpdate.mockResolvedValue(writeResult(1));
 
       await service.dismissReports(notice.id);
 
-      expect(notice.reports).toBe(0);
-      expect(notice.needsReview).toBe(true);
-      expect(noticeSave).toHaveBeenCalledWith(notice);
+      expect(noticeUpdate).toHaveBeenCalledWith(notice.id, { reports: 0 });
     });
 
     it('throws NotFound for an unknown id', async () => {
-      noticeFindOneBy.mockResolvedValue(null);
+      noticeUpdate.mockResolvedValue(writeResult(0));
 
       await expect(service.dismissReports('missing')).rejects.toThrow(
         NotFoundException,

@@ -20,6 +20,9 @@ type NoticeJobData = { url: string; title?: string };
 export class ScraperProcessor extends WorkerHost {
   private readonly logger = new Logger(ScraperProcessor.name);
   private readonly openai: OpenAI;
+  private readonly enrichModel?: string;
+  private readonly visionVerify: boolean;
+  private readonly visionModel?: string;
 
   constructor(
     config: ConfigService,
@@ -32,6 +35,10 @@ export class ScraperProcessor extends WorkerHost {
     this.openai = new OpenAI({
       apiKey: config.getOrThrow<string>('OPENAI_API_KEY'),
     });
+    this.enrichModel =
+      config.get<string>('ENRICH_MODEL') ?? config.get<string>('OPENAI_MODEL');
+    this.visionVerify = config.get<boolean>('VISION_VERIFY') ?? true;
+    this.visionModel = config.get<string>('VISION_MODEL') ?? this.enrichModel;
   }
 
   async process(job: Job<NoticeJobData>): Promise<void> {
@@ -61,12 +68,16 @@ export class ScraperProcessor extends WorkerHost {
 
     const parsed = await extractNoticeFromPdf(url, this.openai, {
       listingTitle: job.data.title,
+      enrichModel: this.enrichModel,
+      visionVerify: this.visionVerify,
+      visionModel: this.visionModel,
     });
 
-    // Empty result means the notice's validity window has already lapsed and
-    // the extractor skipped it — nothing to store. (insert([]) would also throw.)
+    // The extractor currently always yields one record (already-expired notices
+    // included — they're persisted so their URL dedups out of future scrape
+    // cycles); the guard only protects insert([]) if that ever changes.
     if (parsed.length === 0) {
-      this.logger.log(`Skipped already-expired notice at URL ${url}`);
+      this.logger.log(`Nothing extracted from notice at URL ${url}`);
       return;
     }
 
@@ -79,10 +90,17 @@ export class ScraperProcessor extends WorkerHost {
     // from public getters until a human curates it (and Sentry-alerted below).
     const records = flagInvalidNotices(parsed);
 
-    // A single PDF may yield multiple records (e.g. a VTS notice listing
-    // several bunkering areas). Single-statement insert keeps it atomic —
-    // partial inserts on retry would collide with unique(source, subKey).
-    await this.noticeRepository.insert(records);
+    // ON CONFLICT DO NOTHING on unique(source, subKey) makes the job
+    // idempotent: if the insert lands but a later step throws, the BullMQ
+    // retry re-runs the whole handler and must not die on duplicate keys.
+    // (Today each PDF yields exactly one record; the array shape is the
+    // extension point for per-section splitting.)
+    await this.noticeRepository
+      .createQueryBuilder()
+      .insert()
+      .values(records)
+      .orIgnore()
+      .execute();
 
     const log = this.logsRepository.create({
       logType: LogType.NEW_NTM_AUTO,
