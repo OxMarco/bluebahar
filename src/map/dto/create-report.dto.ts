@@ -17,13 +17,13 @@ export class CreateReportDto {
   @IsString()
   @Transform(trim)
   @IsNotEmpty()
-  @MaxLength(120)
+  @MaxLength(255)
   title!: string;
 
   @IsString()
   @Transform(trim)
   @IsNotEmpty()
-  @MaxLength(2000)
+  @MaxLength(1000)
   description!: string;
 
   @IsNumber()

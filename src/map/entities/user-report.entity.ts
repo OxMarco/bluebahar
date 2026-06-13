@@ -19,7 +19,7 @@ export class UserReport {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column()
+  @Column({ type: 'varchar', length: 255 })
   title!: string;
 
   // Free-form; text rather than varchar to make the unbounded intent explicit
