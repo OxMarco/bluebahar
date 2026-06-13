@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Headers,
@@ -10,6 +11,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { MapService } from './map.service';
+import { CreateReportDto } from './dto/create-report.dto';
 import { GetNoticesDto } from './dto/get-notices.dto';
 
 // Dataset content mutates under a stable URL (DatasetRefreshService swaps it in
@@ -48,6 +50,14 @@ export class MapController {
   @Post('notices/report/:id')
   async reportNotice(@Param('id', ParseUUIDPipe) id: string) {
     return this.mapService.report(id);
+  }
+
+  // Crowd-sourced report against a tapped point (a wreck, a hazard, …). Public
+  // and unauthenticated like the notice flag above; the global throttler guards
+  // against abuse and the body is validated by CreateReportDto.
+  @Post('reports')
+  async createReport(@Body() dto: CreateReportDto) {
+    return this.mapService.createReport(dto);
   }
 
   @Get('notices/metrics')

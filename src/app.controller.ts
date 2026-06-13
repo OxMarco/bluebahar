@@ -67,6 +67,7 @@ export class AppController {
         notices: '/v1/map/notices',
         noticeMetrics: '/v1/map/notices/metrics',
         reportNotice: '/v1/map/notices/report/:id',
+        reportPoint: '/v1/map/reports',
         datasets: '/v1/map/datasets',
         dataset: '/v1/map/datasets/:key',
       },

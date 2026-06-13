@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 import { AdminService } from './admin.service';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
+import { UserReport } from '../map/entities/user-report.entity';
 import { Logs } from '../scraper/entities/logs.entity';
 import { LogType } from '../scraper/log-type';
 import { NoticeKind } from '../scraper/notice-kind';
@@ -36,6 +37,22 @@ function makeNotice(
   return notice;
 }
 
+function makeReport(overrides: Partial<UserReport> = {}): UserReport {
+  const report = new UserReport();
+  Object.assign(report, {
+    id: '3e8c2c25-f11b-42d1-a5a6-47694493b3c4',
+    title: 'Wreck marker missing',
+    description: 'The marker is no longer visible from the approach.',
+    latitude: 35.9,
+    longitude: 14.5,
+    resolved: false,
+    createdAt: new Date('2026-01-04T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-04T00:00:00.000Z'),
+    ...overrides,
+  });
+  return report;
+}
+
 const writeResult = (affected: number) => ({
   affected,
   raw: [],
@@ -48,6 +65,9 @@ describe('AdminService', () => {
   let noticeSave: jest.MockedFunction<Repository<NoticeToMariners>['save']>;
   let noticeCreate: jest.MockedFunction<Repository<NoticeToMariners>['create']>;
   let noticeDelete: jest.MockedFunction<Repository<NoticeToMariners>['delete']>;
+  let reportFind: jest.MockedFunction<Repository<UserReport>['find']>;
+  let reportUpdate: jest.MockedFunction<Repository<UserReport>['update']>;
+  let reportDelete: jest.MockedFunction<Repository<UserReport>['delete']>;
   let logsFind: jest.MockedFunction<Repository<Logs>['find']>;
   let logsCreate: jest.MockedFunction<Repository<Logs>['create']>;
   let logsSave: jest.MockedFunction<Repository<Logs>['save']>;
@@ -60,6 +80,9 @@ describe('AdminService', () => {
     noticeSave = jest.fn((n: NoticeToMariners) => Promise.resolve(n)) as never;
     noticeCreate = jest.fn((n: Partial<NoticeToMariners>) => n) as never;
     noticeDelete = jest.fn();
+    reportFind = jest.fn();
+    reportUpdate = jest.fn();
+    reportDelete = jest.fn();
     logsFind = jest.fn();
     logsCreate = jest.fn((l: Partial<Logs>) => l) as never;
     logsSave = jest.fn();
@@ -72,6 +95,11 @@ describe('AdminService', () => {
       create: noticeCreate,
       delete: noticeDelete,
     } as unknown as Repository<NoticeToMariners>;
+    const reportRepo = {
+      find: reportFind,
+      update: reportUpdate,
+      delete: reportDelete,
+    } as unknown as Repository<UserReport>;
     const logsRepo = {
       find: logsFind,
       create: logsCreate,
@@ -79,7 +107,7 @@ describe('AdminService', () => {
     } as unknown as Repository<Logs>;
     const mapService = { getNotices } as unknown as MapService;
 
-    service = new AdminService(noticeRepo, logsRepo, mapService);
+    service = new AdminService(noticeRepo, reportRepo, logsRepo, mapService);
   });
 
   describe('viewLogs', () => {
@@ -163,6 +191,71 @@ describe('AdminService', () => {
       await service.viewNoticesInReview(query);
 
       expect(getNotices).toHaveBeenCalledWith(query, true);
+    });
+  });
+
+  describe('viewReports', () => {
+    it('queries user reports by resolved state, newest first, and paginates', async () => {
+      reportFind.mockResolvedValue([
+        makeReport({ id: 'report-1' }),
+        makeReport({ id: 'report-2' }),
+      ]);
+
+      const result = await service.viewReports({
+        resolved: false,
+        limit: 1,
+        offset: 10,
+      });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.hasMore).toBe(true);
+      const options = reportFind.mock.calls[0]?.[0];
+      expect(options).toEqual(
+        expect.objectContaining({
+          where: { resolved: false },
+          order: { createdAt: 'DESC' },
+          take: 2,
+          skip: 10,
+        }),
+      );
+    });
+  });
+
+  describe('resolveReport', () => {
+    it('marks a user report as resolved', async () => {
+      reportUpdate.mockResolvedValue(writeResult(1));
+
+      await service.resolveReport('report-1');
+
+      expect(reportUpdate).toHaveBeenCalledWith('report-1', {
+        resolved: true,
+      });
+    });
+
+    it('throws NotFound for an unknown report id', async () => {
+      reportUpdate.mockResolvedValue(writeResult(0));
+
+      await expect(service.resolveReport('missing')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('deleteReport', () => {
+    it('deletes a user report by id', async () => {
+      reportDelete.mockResolvedValue({ affected: 1, raw: [] });
+
+      await service.deleteReport('report-1');
+
+      expect(reportDelete).toHaveBeenCalledWith('report-1');
+    });
+
+    it('throws NotFound when no user report is deleted', async () => {
+      reportDelete.mockResolvedValue({ affected: 0, raw: [] });
+
+      await expect(service.deleteReport('missing')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 

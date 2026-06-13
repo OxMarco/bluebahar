@@ -6,12 +6,13 @@ import { AdminService } from './admin.service';
 import { AdminViewController } from './admin-view.controller';
 import { AdminJwtGuard } from './admin-jwt.guard';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
+import { UserReport } from '../map/entities/user-report.entity';
 import { Logs } from '../scraper/entities/logs.entity';
 import { MapModule } from '../map/map.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([NoticeToMariners, Logs]),
+    TypeOrmModule.forFeature([NoticeToMariners, UserReport, Logs]),
     MapModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

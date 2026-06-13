@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {{> admin-head}}
+</head>
+<body class="bg-paper text-ink">
+  <div class="min-h-screen flex">
+    {{> admin-sidebar}}
+    <main class="flex-1 p-6 md:p-10">
+      <header class="mb-6 flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <h1 class="text-2xl font-display font-semibold">{{title}}</h1>
+          <p class="text-sm text-ink/60 mt-1">Reports submitted by boaters against a point on the map. Newest first.</p>
+        </div>
+        <div class="flex items-center gap-1 text-sm bg-ink/5 rounded-lg p-1">
+          <a href="/admin/reports" class="px-3 py-1 rounded-md {{#unless resolved}}bg-white font-medium{{else}}text-ink/60{{/unless}}">Open</a>
+          <a href="/admin/reports?resolved=true" class="px-3 py-1 rounded-md {{#if resolved}}bg-white font-medium{{else}}text-ink/60{{/if}}">Resolved</a>
+        </div>
+      </header>
+
+      {{#if reports.length}}
+        <div class="overflow-x-auto border border-ink/10 rounded-xl bg-white">
+          <table class="min-w-full text-sm">
+            <thead class="text-left text-xs uppercase tracking-wider text-ink/55 border-b border-ink/10">
+              <tr>
+                <th class="px-4 py-3">Report</th>
+                <th class="px-4 py-3">Location</th>
+                <th class="px-4 py-3">Submitted</th>
+                <th class="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-ink/5">
+              {{#each reports}}
+                <tr id="row-{{this.id}}">
+                  <td class="px-4 py-3 align-top">
+                    <div class="font-medium">{{this.title}}</div>
+                    <div class="text-xs text-ink/55 mt-0.5">{{this.description}}</div>
+                  </td>
+                  <td class="px-4 py-3 align-top text-xs">
+                    <a
+                      href="https://www.openstreetmap.org/?mlat={{this.latitude}}&mlon={{this.longitude}}#map=14/{{this.latitude}}/{{this.longitude}}"
+                      target="_blank"
+                      rel="noopener"
+                      class="text-ink/70 hover:underline"
+                    >{{this.latitude}}, {{this.longitude}}</a>
+                  </td>
+                  <td class="px-4 py-3 align-top text-xs">{{formatDate this.createdAt}}</td>
+                  <td class="px-4 py-3 align-top">
+                    <div class="row-actions flex gap-2 justify-end">
+                      {{#unless this.resolved}}
+                        <button
+                          hx-post="/admin/reports/{{this.id}}/resolve"
+                          hx-target="#row-{{this.id}}"
+                          hx-swap="outerHTML"
+                          class="text-xs bg-good text-white rounded-md px-3 py-1.5 hover:opacity-90"
+                        >Resolve</button>
+                      {{/unless}}
+                      <button
+                        hx-delete="/admin/reports/{{this.id}}"
+                        hx-target="#row-{{this.id}}"
+                        hx-swap="outerHTML"
+                        hx-confirm="Permanently delete this report?"
+                        class="text-xs bg-bad text-white rounded-md px-3 py-1.5 hover:opacity-90"
+                      >Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        </div>
+        {{> admin-pagination}}
+      {{else}}
+        <div class="border border-ink/10 rounded-xl bg-white p-10 text-center text-ink/60">
+          {{#if resolved}}No resolved reports.{{else}}No open reports.{{/if}}
+        </div>
+      {{/if}}
+    </main>
+  </div>
+</body>
+</html>

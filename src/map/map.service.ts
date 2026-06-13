@@ -5,12 +5,15 @@ import type { Cache } from 'cache-manager';
 import { IsNull, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { createHash } from 'node:crypto';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
+import { UserReport } from './entities/user-report.entity';
 import { NoticeKind } from '../scraper/notice-kind';
 import { CacheManifestDto } from './dto/cache-manifest.dto';
+import { CreateReportDto } from './dto/create-report.dto';
 import { GetNoticesDto } from './dto/get-notices.dto';
 import { NoticeMetricsDto } from './dto/notice-metrics.dto';
 import { PaginatedNoticesDto } from './dto/paginated-notices.dto';
 import { toNoticeDto } from './notice-serializer';
+import { containsSwearWord } from './report-spam-filter';
 import { toPaginated } from '../common/dto/paginated.dto';
 import {
   DatasetCatalogService,
@@ -23,6 +26,8 @@ export class MapService {
   constructor(
     @InjectRepository(NoticeToMariners)
     private readonly noticeRepository: Repository<NoticeToMariners>,
+    @InjectRepository(UserReport)
+    private readonly reportRepository: Repository<UserReport>,
     private readonly datasets: DatasetCatalogService,
     @Inject(CACHE_MANAGER)
     private readonly cache: Cache,
@@ -206,6 +211,21 @@ export class MapService {
       throw new NotFoundException({
         error: `notice to mariners with id ${id} not found`,
       });
+  }
+
+  // Persists a user-submitted report against a tapped point unless the spam
+  // filter rejects it. The body is admin-only, so nothing else is echoed back.
+  async createReport(
+    dto: CreateReportDto,
+  ): Promise<{ accepted: true; id: string } | { accepted: false }> {
+    if (containsSwearWord(dto.title, dto.description)) {
+      return { accepted: false };
+    }
+
+    const saved = await this.reportRepository.save(
+      this.reportRepository.create(dto),
+    );
+    return { accepted: true, id: saved.id };
   }
 }
 

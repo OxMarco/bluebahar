@@ -7,6 +7,7 @@ import {
 import { NotFoundException } from '@nestjs/common';
 import { MapService } from './map.service';
 import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
+import { UserReport } from './entities/user-report.entity';
 import { NoticeKind } from '../scraper/notice-kind';
 import type { GetNoticesDto } from './dto/get-notices.dto';
 
@@ -60,6 +61,8 @@ describe('MapService', () => {
   let increment: jest.MockedFunction<Repository<NoticeToMariners>['increment']>;
   let list: jest.MockedFunction<DatasetCatalogService['list']>;
   let requireEntry: jest.MockedFunction<DatasetCatalogService['requireEntry']>;
+  let reportCreate: jest.MockedFunction<Repository<UserReport>['create']>;
+  let reportSave: jest.MockedFunction<Repository<UserReport>['save']>;
   let service: MapService;
 
   beforeEach(() => {
@@ -81,12 +84,21 @@ describe('MapService', () => {
       wrap: jest.fn((_key: string, fn: () => unknown) => fn()),
     } as unknown as Cache;
 
+    reportCreate = jest.fn((r: Partial<UserReport>) => r) as never;
+    reportSave = jest.fn((r: UserReport) =>
+      Promise.resolve({ ...r, id: 'report-1' }),
+    ) as never;
+
     service = new MapService(
       {
         find,
         createQueryBuilder,
         increment,
       } as unknown as Repository<NoticeToMariners>,
+      {
+        create: reportCreate,
+        save: reportSave,
+      } as unknown as Repository<UserReport>,
       { list, requireEntry } as unknown as DatasetCatalogService,
       cache,
     );
@@ -245,6 +257,34 @@ describe('MapService', () => {
     increment.mockResolvedValue({ affected: 0, raw: [], generatedMaps: [] });
 
     await expect(service.report('missing')).rejects.toThrow(NotFoundException);
+  });
+
+  it('persists clean point reports and returns the saved id', async () => {
+    const dto = {
+      title: 'Wreck marker missing',
+      description: 'The marker is no longer visible from the approach.',
+      latitude: 35.9,
+      longitude: 14.5,
+    };
+
+    const result = await service.createReport(dto);
+
+    expect(reportCreate).toHaveBeenCalledWith(dto);
+    expect(reportSave).toHaveBeenCalledWith(dto);
+    expect(result).toEqual({ accepted: true, id: 'report-1' });
+  });
+
+  it('discards reports containing swear words before persisting', async () => {
+    const result = await service.createReport({
+      title: 'Unsafe wreck',
+      description: 'Someone wrote fucking graffiti on the buoy.',
+      latitude: 35.9,
+      longitude: 14.5,
+    });
+
+    expect(result).toEqual({ accepted: false });
+    expect(reportCreate).not.toHaveBeenCalled();
+    expect(reportSave).not.toHaveBeenCalled();
   });
 
   it('delegates dataset reads to the catalog service', () => {

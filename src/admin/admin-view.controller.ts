@@ -37,6 +37,7 @@ import { LoginDto } from './dto/login.dto';
 import { CreateNoticeDto } from './dto/create-notice.dto';
 import { ViewLogsDto } from './dto/view-logs.dto';
 import { ViewFlaggedDto } from './dto/view-flagged.dto';
+import { ViewReportsDto } from './dto/view-reports.dto';
 import { ReviewNoticesDto } from './dto/review-notices.dto';
 import { Paginated } from '../common/dto/paginated.dto';
 import { LogType } from '../scraper/log-type';
@@ -239,6 +240,20 @@ export class AdminViewController {
     };
   }
 
+  @Get('reports')
+  @UseGuards(AdminJwtGuard)
+  @Render('admin/reports')
+  async reportsPage(@Query() query: ViewReportsDto) {
+    const page = await this.adminService.viewReports(query);
+    return {
+      page: 'reports',
+      title: 'User reports',
+      reports: page.items,
+      resolved: query.resolved,
+      pagination: paginationMeta(page, query),
+    };
+  }
+
   @Get('logs')
   @UseGuards(AdminJwtGuard)
   @Render('admin/logs')
@@ -301,6 +316,22 @@ export class AdminViewController {
   @HttpCode(HttpStatus.OK)
   async deleteNotice(@Param('id', ParseUUIDPipe) id: string) {
     await this.adminService.rejectNtM(id);
+    return '';
+  }
+
+  @Post('reports/:id/resolve')
+  @UseGuards(AdminJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  async resolveReport(@Param('id', ParseUUIDPipe) id: string) {
+    await this.adminService.resolveReport(id);
+    return '';
+  }
+
+  @Delete('reports/:id')
+  @UseGuards(AdminJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  async deleteReport(@Param('id', ParseUUIDPipe) id: string) {
+    await this.adminService.deleteReport(id);
     return '';
   }
 

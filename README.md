@@ -7,6 +7,7 @@ Backend to scrape data about Maltese waters.
 - `GET /v1/map/notices` returns `{ items, limit, offset, hasMore }`.
 - `GET /v1/map/notices/metrics` returns public/review backlog counts, including active notices hidden pending review.
 - `POST /v1/map/notices/report/:id` lets the public flag a notice; it increments the notice's `reports` counter.
+- `POST /v1/map/reports` accepts a title, description, latitude, and longitude for a point-specific user report. Submissions containing swear words are discarded before they reach the admin queue.
 - `GET /v1/map/datasets` includes each layer's `kind`, `geometryTypes`, and `bbox`.
 - `GET /v1/map/datasets/:key` supports `If-None-Match` / `304 Not Modified` via the dataset SHA-256 ETag.
 
@@ -16,6 +17,7 @@ Browser-only. Visit `/admin/login` and enter the `ADMIN_API_KEY` value; on succe
 
 - `/admin/review` — notices flagged for review (`needsReview=true`), either by deterministic extraction sanity checks or by the AI-vision cross-check that compares extracted geometry against the notice's own chart pages (`VISION_VERIFY`, see `.env.example`); approve to publish, delete to reject.
 - `/admin/flagged?minReports=` — notices with at least `minReports` user reports (default 1); dismiss to reset the counter, delete to remove.
+- `/admin/reports` — point-specific user reports submitted from the map; resolve to archive, delete to remove.
 - `/admin/logs?logType=` — scraping/ingestion log entries, newest first. Logs older than 14 days are pruned daily by a midnight cron.
 - `/admin/new` — manually create a notice (skips the review queue). Geometries (`areas`) aren't editable from the form yet.
 
