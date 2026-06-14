@@ -56,6 +56,11 @@ export interface AdaptInput {
   // Anchor text scraped from the listing page link (PdfLink.title). Used as a
   // human-readable title fallback when the PDF yields no title/reference.
   listingTitle?: string;
+  // When true, a 'match' verdict from the vision cross-check clears the
+  // generic-extraction review flag (the vision pass is the verification a human
+  // would otherwise do). Gated by VISION_AUTOCLEAR_GEOMETRY; defaults off so the
+  // adapter stays conservative when the caller doesn't opt in.
+  autoClearVisionMatch?: boolean;
 }
 
 function xy(c: Position): NoticePoint {
@@ -301,6 +306,16 @@ export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
   const usedGenericFallback = extraction.areas.some((a) =>
     a.restrictions.some((r) => r.includes('generic extraction')),
   );
+  // The generic catch-all infers multi-point geometry, so it asks a human to
+  // confirm the shape matches the chart. The vision cross-check asks the model
+  // that exact question; a clean 'match' is that confirmation, so when the
+  // caller opts in we drop the generic flag rather than queue redundant review.
+  // Only a clean match clears it — mismatch (flagged via visionReasons above),
+  // unverifiable, and failed verdicts never produce a 'vision_match:' note, so
+  // they keep the flag.
+  const visionMatched = notes.some((n) => n.startsWith('vision_match:'));
+  const genericFallbackNeedsReview =
+    usedGenericFallback && !(input.autoClearVisionMatch && visionMatched);
   const suspiciousEmpty =
     areas.length === 0 &&
     noticeCoordCount(notes) > 0 &&
@@ -319,7 +334,7 @@ export function adaptToParsedNotice(input: AdaptInput): ParsedNotice {
     ...possibleCoordReasons,
     ...genericDropReasons,
     ...visionReasons,
-    usedGenericFallback ? 'generic_extraction_verify_geometry' : null,
+    genericFallbackNeedsReview ? 'generic_extraction_verify_geometry' : null,
     suspiciousEmpty ? 'restriction_with_coordinates_but_no_geometry' : null,
     titleLooksLikeUrl ? 'title_looks_like_url' : null,
   ]);

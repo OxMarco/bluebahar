@@ -370,6 +370,61 @@ describe('adaptToParsedNotice', () => {
         'generic_extraction_verify_geometry',
       );
     });
+
+    const genericWithVisionInput = (visionNote: string): AdaptInput =>
+      input({
+        notes: ['coords:7', visionNote],
+        extraction: extraction({
+          areas: [
+            area({ restrictions: ['generic extraction — verify geometry'] }),
+          ],
+        }),
+        featureCollection: fc([
+          {
+            geometry: { type: 'Point', coordinates: [14.5, 35.9] },
+            properties: {},
+          },
+        ]),
+      });
+
+    it('clears the generic flag when vision matched and auto-clear is on', () => {
+      const result = adaptToParsedNotice({
+        ...genericWithVisionInput(
+          'vision_match:chart shows one area as extracted',
+        ),
+        autoClearVisionMatch: true,
+      });
+      expect(result.reviewReasons).not.toContain(
+        'generic_extraction_verify_geometry',
+      );
+      expect(result.needsReview).toBe(false);
+    });
+
+    it('keeps the generic flag on a vision match when auto-clear is off', () => {
+      const result = adaptToParsedNotice(
+        genericWithVisionInput(
+          'vision_match:chart shows one area as extracted',
+        ),
+      );
+      expect(result.reviewReasons).toContain(
+        'generic_extraction_verify_geometry',
+      );
+    });
+
+    it('keeps the generic flag when auto-clear is on but vision did not cleanly match', () => {
+      for (const note of [
+        'vision_unverifiable:no chart pages found',
+        'vision_verify_failed:render error',
+      ]) {
+        const result = adaptToParsedNotice({
+          ...genericWithVisionInput(note),
+          autoClearVisionMatch: true,
+        });
+        expect(result.reviewReasons).toContain(
+          'generic_extraction_verify_geometry',
+        );
+      }
+    });
   });
 
   describe('description + metadata', () => {

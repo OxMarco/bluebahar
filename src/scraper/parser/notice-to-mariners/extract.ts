@@ -45,6 +45,11 @@ export interface ExtractOptions {
   // Model for the vision call; falls back to the VISION_MODEL/ENRICH_MODEL/
   // OPENAI_MODEL env chain in vision-verify.ts.
   visionModel?: string;
+  // Let a 'match' vision verdict clear the generic-extraction review flag, so a
+  // notice whose inferred geometry the vision pass confirmed against its chart
+  // publishes without manual review. Defaults false (gated by
+  // VISION_AUTOCLEAR_GEOMETRY); only meaningful when visionVerify is also on.
+  autoClearVisionMatch?: boolean;
   // Wall-clock reference for the already-expired check. Defaults to now;
   // injectable for deterministic tests.
   now?: Date;
@@ -147,6 +152,7 @@ export async function extractNoticeFromBuffer(
       enrichment,
       notes,
       listingTitle: opts.listingTitle,
+      autoClearVisionMatch: opts.autoClearVisionMatch,
     }),
   ];
 }

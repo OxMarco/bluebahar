@@ -23,6 +23,7 @@ export class ScraperProcessor extends WorkerHost {
   private readonly enrichModel?: string;
   private readonly visionVerify: boolean;
   private readonly visionModel?: string;
+  private readonly autoClearVisionMatch: boolean;
 
   constructor(
     config: ConfigService,
@@ -39,6 +40,8 @@ export class ScraperProcessor extends WorkerHost {
       config.get<string>('ENRICH_MODEL') ?? config.get<string>('OPENAI_MODEL');
     this.visionVerify = config.get<boolean>('VISION_VERIFY') ?? true;
     this.visionModel = config.get<string>('VISION_MODEL') ?? this.enrichModel;
+    this.autoClearVisionMatch =
+      config.get<boolean>('VISION_AUTOCLEAR_GEOMETRY') ?? false;
   }
 
   async process(job: Job<NoticeJobData>): Promise<void> {
@@ -71,6 +74,7 @@ export class ScraperProcessor extends WorkerHost {
       enrichModel: this.enrichModel,
       visionVerify: this.visionVerify,
       visionModel: this.visionModel,
+      autoClearVisionMatch: this.autoClearVisionMatch,
     });
 
     // The extractor currently always yields one record (already-expired notices

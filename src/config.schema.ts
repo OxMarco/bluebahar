@@ -50,6 +50,18 @@ export const configSchema = z.object({
   // enrichment model chain when unset.
   VISION_MODEL: z.string().min(1).optional(),
 
+  // When a notice's geometry came from the generic catch-all extractor (which
+  // normally forces manual review) AND the vision cross-check returned 'match',
+  // treat the vision pass as the verification the review queue exists for and
+  // publish without a human. Off by default: it lets vision-trusted geometry
+  // reach mariners unreviewed, so enable it in prod only once VISION_VERIFY's
+  // match verdicts are trusted. Mismatch/unverifiable/failed still flag.
+  // String enum rather than coerce.boolean: Boolean('false') is true.
+  VISION_AUTOCLEAR_GEOMETRY: z.preprocess(
+    (v) => (v === '' || v === undefined ? 'false' : v),
+    z.enum(['true', 'false']).transform((v) => v === 'true'),
+  ),
+
   // Outbound proxy for the Transport Malta scrape (http.ts reads it at import
   // time). Optional — but validated so an empty value fails loudly rather than
   // silently disabling the proxy and getting the scraper 403'd.
