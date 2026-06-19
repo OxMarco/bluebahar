@@ -163,11 +163,35 @@ services:
       timeout: 10s
       retries: 5
       start_period: 40s
-    mem_limit: 128m
+    # warp-svc (the tunnel daemon) outgrows 128m and an OOM-kill of just that
+    # child leaves the SOCKS listener up but the tunnel dead — looks "running"
+    # but every scrape fails DNS. 256m gives it headroom.
+    mem_limit: 256m
     cpus: 0.5
     logging: *default-logging
     networks:
       - backend
+    # Docker does NOT restart an unhealthy container — only a fully-exited one.
+    # When the WARP daemon dies behind a still-listening proxy, the container
+    # stays "up (unhealthy)" forever. autoheal watches this label and restarts it.
+    labels:
+      - 'autoheal=true'
+
+  # Restarts any container that goes (and stays) unhealthy — covers the warp
+  # sidecar's "proxy up, tunnel dead" failure mode that restart:unless-stopped
+  # can't catch. Talks to the Docker socket; no app network access needed.
+  autoheal:
+    image: willfarrell/autoheal
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: 30
+      AUTOHEAL_START_PERIOD: 60
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    mem_limit: 64m
+    cpus: 0.25
+    logging: *default-logging
 
 volumes:
   pgdata:
