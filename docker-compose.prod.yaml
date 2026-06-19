@@ -22,6 +22,9 @@ services:
       - .env
     environment:
       NODE_ENV: production
+      # Cap V8's heap below the container mem_limit so a runaway heap throws
+      # in-process instead of being SIGKILL'd by the cgroup OOM killer.
+      NODE_OPTIONS: --max-old-space-size=768
       PORT: 3000
       DB_HOST: postgres
       DB_PORT: 5432
@@ -58,7 +61,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-    mem_limit: 512m
+    mem_limit: 1g
     cpus: 1.0
     logging: *default-logging
     networks:
