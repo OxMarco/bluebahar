@@ -69,6 +69,14 @@ const DEFAULT_VISION_MODEL = (): string =>
 // per zone still verifies, just partially.
 const MAX_CHART_PAGES = 5;
 const SPARSE_TEXT_CHARS = 600;
+// Render to a FIXED pixel width rather than a scale factor. A scale of 1.5
+// rasterises each page relative to its own physical size, so an oversized
+// chart sheet (some Transport Malta notices embed A0/A1 charts) produces a
+// multi-hundred-megabyte bitmap that OOM-killed the worker even past a 1.5GB
+// limit. desiredWidth caps the bitmap deterministically — ~1400px wide is
+// ample for the vision model to read chart topology — so no single page can
+// blow the heap regardless of the source sheet's dimensions.
+const RENDER_WIDTH_PX = 1400;
 
 export async function renderChartPages(
   buffer: Buffer | Uint8Array,
@@ -97,7 +105,10 @@ export async function renderChartPages(
     // were being marked "stalled" and retried forever.
     const dataUrls: string[] = [];
     for (const n of candidates) {
-      const shot = await parser.getScreenshot({ partial: [n], scale: 1.5 });
+      const shot = await parser.getScreenshot({
+        partial: [n],
+        desiredWidth: RENDER_WIDTH_PX,
+      });
       const page = shot.pages[0];
       if (page) dataUrls.push(page.dataUrl);
     }
