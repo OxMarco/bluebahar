@@ -78,6 +78,66 @@ const SPARSE_TEXT_CHARS = 600;
 // blow the heap regardless of the source sheet's dimensions.
 const RENDER_WIDTH_PX = 1400;
 
+// A legitimate chart page is vector art or a handful of raster tiles (the real
+// notices we render carry single-digit paint-image counts). Some notices embed
+// a page composited from thousands of tiny image fragments — one observed page
+// issued 4730 paint-image ops, another 17600 — and rasterising it balloons
+// pdfjs past any sane memory limit and OOM-kills the worker, regardless of
+// output width (the cost is decoding/compositing the source ops, not the
+// bitmap). Counting paint-image ops is cheap (no rasterisation) and cleanly
+// separates real charts from these bombs, so we skip such a page rather than
+// render it. A notice whose only chart pages are bombs simply comes back
+// 'unverifiable' — geometry is unaffected.
+const MAX_IMAGE_OPS_PER_PAGE = 300;
+
+// pdfjs is ESM-only and sizeable; load it lazily (and once) so it is paged in
+// only when vision verification actually runs.
+type PdfjsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
+let pdfjsPromise: Promise<PdfjsModule> | undefined;
+function loadPdfjs(): Promise<PdfjsModule> {
+  return (pdfjsPromise ??= import('pdfjs-dist/legacy/build/pdf.mjs'));
+}
+
+// Of the given pages, return those whose paint-image op count exceeds the
+// safety threshold — i.e. the ones too image-dense to rasterise without
+// risking an OOM. Reads operator lists only; never rasterises.
+async function imageBombPages(
+  buffer: Buffer | Uint8Array,
+  pages: number[],
+): Promise<Set<number>> {
+  const pdfjs = await loadPdfjs();
+  const data = buffer instanceof Buffer ? new Uint8Array(buffer) : buffer;
+  // getDocument transfers the typed array it is handed; pass a copy so the
+  // original buffer stays intact for pd-parse's rasterisation afterwards.
+  const doc = await pdfjs.getDocument({ data: data.slice() }).promise;
+  const bombs = new Set<number>();
+  try {
+    const { OPS } = pdfjs;
+    for (const n of pages) {
+      const page = await doc.getPage(n);
+      try {
+        const { fnArray } = await page.getOperatorList();
+        let count = 0;
+        for (const fn of fnArray) {
+          if (
+            fn === OPS.paintImageXObject ||
+            fn === OPS.paintInlineImageXObject ||
+            fn === OPS.paintImageMaskXObject
+          ) {
+            count++;
+          }
+        }
+        if (count > MAX_IMAGE_OPS_PER_PAGE) bombs.add(n);
+      } finally {
+        page.cleanup();
+      }
+    }
+  } finally {
+    await doc.destroy();
+  }
+  return bombs;
+}
+
 export async function renderChartPages(
   buffer: Buffer | Uint8Array,
 ): Promise<string[]> {
@@ -95,6 +155,10 @@ export async function renderChartPages(
       candidates.push(n);
     }
     if (!candidates.length) return [];
+    // Drop pages too image-dense to rasterise safely (see imageBombPages).
+    const bombs = await imageBombPages(buffer, candidates);
+    const safe = candidates.filter((n) => !bombs.has(n));
+    if (!safe.length) return [];
     // Rasterise one page at a time rather than handing the whole candidate set
     // to a single getScreenshot call. pdfjs renders vector charts into large
     // off-heap bitmaps; materialising all pages at once spiked RSS by ~500MB
@@ -104,7 +168,7 @@ export async function renderChartPages(
     // the synchronous multi-page render was blocking it long enough that jobs
     // were being marked "stalled" and retried forever.
     const dataUrls: string[] = [];
-    for (const n of candidates) {
+    for (const n of safe) {
       const shot = await parser.getScreenshot({
         partial: [n],
         desiredWidth: RENDER_WIDTH_PX,
