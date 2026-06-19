@@ -87,11 +87,21 @@ export async function renderChartPages(
       candidates.push(n);
     }
     if (!candidates.length) return [];
-    const shots = await parser.getScreenshot({
-      partial: candidates,
-      scale: 1.5,
-    });
-    return shots.pages.map((p) => p.dataUrl);
+    // Rasterise one page at a time rather than handing the whole candidate set
+    // to a single getScreenshot call. pdfjs renders vector charts into large
+    // off-heap bitmaps; materialising all pages at once spiked RSS by ~500MB
+    // and OOM-killed the worker (even past a 1GB cgroup limit) on chart-heavy
+    // notices. Per-page keeps peak memory to a single bitmap, and the await
+    // between pages yields the event loop so BullMQ can renew the job lock —
+    // the synchronous multi-page render was blocking it long enough that jobs
+    // were being marked "stalled" and retried forever.
+    const dataUrls: string[] = [];
+    for (const n of candidates) {
+      const shot = await parser.getScreenshot({ partial: [n], scale: 1.5 });
+      const page = shot.pages[0];
+      if (page) dataUrls.push(page.dataUrl);
+    }
+    return dataUrls;
   } finally {
     await parser.destroy().catch(() => {});
   }
