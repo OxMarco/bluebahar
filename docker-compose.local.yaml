@@ -23,11 +23,9 @@ services:
       DB_HOST: postgres
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      # Community-map import runs on boot. Use the self-authored briefs locally
-      # so it's instant and needs no OpenAI billing; flip to true to exercise the
-      # AI descriptions. (.env can override.)
+      # Community-map import runs on boot and enriches source facts with OpenAI.
+      # OPENAI_API_KEY is loaded from .env.
       COMMUNITY_MAP_IMPORT_ENABLED: 'true'
-      COMMUNITY_MAP_DESCRIBE_WITH_AI: 'false'
     depends_on:
       - postgres
       - redis

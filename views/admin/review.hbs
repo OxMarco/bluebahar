@@ -7,17 +7,17 @@
 <body class="bg-paper text-ink">
   <div class="min-h-screen flex">
     {{> admin-sidebar}}
-    <main class="flex-1 p-6 md:p-10">
+    <main class="admin-main">
       <header class="mb-6">
-        <h1 class="text-2xl font-display font-semibold">{{title}}</h1>
-        <p class="text-sm text-ink/60 mt-1">Notices the extractor flagged for manual review. Click a row to inspect the area. Approve to publish, reject to delete.</p>
+        <h1 class="page-title">{{title}}</h1>
+        <p class="page-subtitle">Notices the extractor flagged for manual review. Click a row to inspect the area. Approve to publish, reject to delete.</p>
       </header>
 
       {{#if notices.length}}
         <div class="review-layout">
-          <div class="overflow-x-auto border border-ink/10 rounded-xl bg-white">
-            <table class="min-w-full text-sm">
-              <thead class="text-left text-xs uppercase tracking-wider text-ink/55 border-b border-ink/10">
+          <div class="table-wrap">
+            <table class="min-w-full text-sm cards-sm">
+              <thead class="table-head">
                 <tr>
                   <th class="px-4 py-3">Title</th>
                   <th class="px-4 py-3">Kind</th>
@@ -26,10 +26,10 @@
                   <th class="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-ink/5">
+              <tbody class="table-body">
                 {{#each notices}}
                   <tr id="row-{{this.id}}" class="review-row" data-notice-id="{{this.id}}">
-                    <td class="px-4 py-3 align-top">
+                    <td class="px-4 py-3 align-top" data-label="Notice">
                       <div class="font-medium notice-title">{{this.title}}</div>
                       <div class="text-xs text-ink/55 mt-0.5 line-clamp-2">{{this.description}}</div>
                       {{#if this.reviewReasons.length}}
@@ -45,28 +45,30 @@
                       <script type="application/json" id="geom-{{this.id}}">{{{json this.geometry}}}</script>
                       <script type="application/json" id="reps-{{this.id}}">{{{json this.representativePoints}}}</script>
                     </td>
-                    <td class="px-4 py-3 align-top"><span class="inline-block text-[11px] uppercase tracking-wider bg-ink/5 rounded px-2 py-0.5">{{this.kind}}</span></td>
-                    <td class="px-4 py-3 align-top text-xs">
+                    <td class="px-4 py-3 align-top" data-label="Kind"><span class="badge">{{this.kind}}</span></td>
+                    <td class="px-4 py-3 align-top text-xs" data-label="Active">
                       <div>{{formatDate this.activeFrom}}</div>
                       {{#if this.activeTo}}<div class="text-ink/50">→ {{formatDate this.activeTo}}</div>{{else}}<div class="text-ink/50">→ no expiry</div>{{/if}}
                     </td>
-                    <td class="px-4 py-3 align-top text-xs">
+                    <td class="px-4 py-3 align-top text-xs" data-label="Source">
                       <a href="{{this.source}}" target="_blank" rel="noopener" class="text-ink/70 hover:underline break-all">{{this.source}}</a>
                     </td>
-                    <td class="px-4 py-3 align-top">
+                    <td class="px-4 py-3 align-top" data-label="Actions">
                       <div class="row-actions flex gap-2 justify-end">
                         <button
                           hx-post="/admin/notices/{{this.id}}/approve"
                           hx-target="#row-{{this.id}}"
                           hx-swap="outerHTML"
-                          class="text-xs bg-good text-white rounded-md px-3 py-1.5 hover:opacity-90"
+                          class="btn btn-sm btn-good"
+                          data-toast="Notice approved"
                         >Approve</button>
                         <button
                           hx-delete="/admin/notices/{{this.id}}"
                           hx-target="#row-{{this.id}}"
                           hx-swap="outerHTML"
                           hx-confirm="Permanently delete this notice?"
-                          class="text-xs bg-bad text-white rounded-md px-3 py-1.5 hover:opacity-90"
+                          class="btn btn-sm btn-danger"
+                          data-toast="Notice rejected"
                         >Reject</button>
                       </div>
                     </td>
@@ -82,7 +84,7 @@
         </div>
         {{> admin-pagination}}
       {{else}}
-        <div class="border border-ink/10 rounded-xl bg-white p-10 text-center text-ink/60">
+        <div class="empty-state">
           Nothing to review.
         </div>
       {{/if}}

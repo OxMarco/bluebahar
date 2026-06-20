@@ -32,8 +32,9 @@ export const configSchema = z.object({
   // and it spares the DB the repeated COUNT/aggregate fan-out under load.
   MAP_CACHE_TTL_MS: z.coerce.number().int().positive().default(30_000),
 
-  // OpenAI
-  OPENAI_API_KEY: optionalString,
+  // OpenAI. Required: the community-map import generates every zone description
+  // with the LLM, so there is no key-free path.
+  OPENAI_API_KEY: z.string().min(1),
 
   // Model for community-map zone descriptions. ENRICH_MODEL wins over the
   // generic OPENAI_MODEL; the map importer has a final default.
@@ -51,15 +52,6 @@ export const configSchema = z.object({
     (v) => (v === '' || v === undefined ? 'true' : v),
     z.enum(['true', 'false']).transform((v) => v === 'true'),
   ),
-  // Generate each zone's description with the LLM. Defaults true. Set false for
-  // local/offline runs: the import then uses the self-authored restriction brief
-  // (still original text, never the map's copyrighted prose) — instant, no key,
-  // no per-zone billing. String enum rather than coerce.boolean.
-  COMMUNITY_MAP_DESCRIBE_WITH_AI: z.preprocess(
-    (v) => (v === '' || v === undefined ? 'true' : v),
-    z.enum(['true', 'false']).transform((v) => v === 'true'),
-  ),
-
   // Pre-shared admin secret. The user types this into the /admin/login form;
   // the controller constant-time compares it to mint a session JWT. Min length
   // keeps it from being trivially brute-forced.

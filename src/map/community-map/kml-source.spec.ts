@@ -89,4 +89,19 @@ describe('kml-source', () => {
   it('rejects malformed XML', () => {
     expect(() => parseKmlFolders('<kml><Document>')).toThrow('not valid KML');
   });
+
+  it('rejects an invalid coordinate instead of silently dropping it', () => {
+    const invalid = KML.replace('14.45,35.82,0', 'invalid,35.82,0');
+    expect(() => parseKmlFolders(invalid)).toThrow('invalid coordinates');
+  });
+
+  it('rejects a degenerate geometry instead of omitting the placemark', () => {
+    const degenerate = KML.replace(
+      '14.30,35.90,0 14.31,35.91,0',
+      '14.30,35.90,0 14.30,35.90,0',
+    );
+    expect(() => parseKmlFolders(degenerate)).toThrow(
+      'degenerate line geometry',
+    );
+  });
 });

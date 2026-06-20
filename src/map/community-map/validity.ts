@@ -1,11 +1,12 @@
-// Extracts a validity window from a community-map placemark's description.
-//
-// These are FACTS (dates), not the description's copyrightable expression, so
-// reading them is fine even though we never store the prose itself. The
-// seasonal swimmer-zone notices state a start date in plain English, e.g.
-// "These restrictions are in place from the 9th of April 2026." Standing
-// designations (wrecks, archaeological zones) say "all year round" and yield no
-// dates — the caller then treats them as permanent.
+// Extracts the FACTS a community-map placemark states — validity window, the
+// establishing notice reference, the official source link, and any safety
+// distance. These are facts/links, not the description's copyrightable
+// expression, so reading (and storing) them is fine even though we never keep
+// the prose itself. The seasonal swimmer-zone notices state a start date in
+// plain English, e.g. "These restrictions are in place from the 9th of April
+// 2026." Standing designations (wrecks, archaeological zones) say "all year
+// round" and yield no validity dates — the caller then dates them from the
+// notice year instead.
 import { DateTime } from 'luxon';
 
 export interface Validity {
@@ -58,6 +59,28 @@ const TO_RE = new RegExp(
   'i',
 );
 
+// The notice that established a zone names its issue year, e.g. "Notice to
+// Mariners 09 & 10 of 2023", "Notice to Mariners 059 of 2026", or "Local Notice
+// to Mariners No. 132 of 2025". Standing ("all year round") designations state
+// no start date in their prose; their notice year is the most faithful
+// activeFrom we have — far better than the day we happened to scrape the map.
+// The reference lives in the placemark description (swimmer zones) or, for the
+// permanent layers, only in the KML folder label. We read only the year (a
+// fact); we never store the label's prose. The bounded `.{0,40}?` lets the
+// match cross the "No." abbreviation without running into a later sentence.
+const NOTICE_YEAR_RE = /notices? to mariners\b.{0,40}?\bof\s+(\d{4})/i;
+
+// Jan 1 (UTC) of the year named in a notice-to-mariners reference, or null when
+// no plausible reference is present.
+export function parseNoticeDate(text: string | undefined | null): Date | null {
+  if (!text) return null;
+  const m = NOTICE_YEAR_RE.exec(text.replace(/<[^>]+>/g, ' '));
+  if (!m) return null;
+  const year = Number(m[1]);
+  if (year < 2000 || year > 2100) return null;
+  return DateTime.utc(year, 1, 1).toJSDate();
+}
+
 export function parseValidity(
   description: string | undefined | null,
 ): Validity {
@@ -78,4 +101,46 @@ export function parseValidity(
     if (d) out.to = d;
   }
   return out;
+}
+
+// Strip HTML/CDATA tags and collapse whitespace, so a reference or link split
+// across <br>/<b> reads as continuous prose. Shared by the fact extractors.
+function plain(text: string): string {
+  return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+}
+
+// The full establishing reference, e.g. "Notice to Mariners 09 & 10 of 2023" or
+// "Local Notice to Mariners No. 132 of 2025". Stored verbatim for provenance.
+const NOTICE_REF_RE =
+  /(?:local\s+)?notices? to mariners\b.{0,40}?\bof\s+\d{4}/i;
+export function parseNoticeRef(text: string | undefined | null): string | null {
+  if (!text) return null;
+  const m = NOTICE_REF_RE.exec(plain(text));
+  return m ? m[0].trim() : null;
+}
+
+// The official source link (Transport Malta filestream, legislation.mt, …).
+// The first http(s) URL in the description; trailing sentence punctuation is
+// trimmed so the stored link is clean.
+const URL_RE = /https?:\/\/[^\s"'<>]+/i;
+export function parseSourceUrl(text: string | undefined | null): string | null {
+  if (!text) return null;
+  const m = URL_RE.exec(plain(text));
+  return m ? m[0].replace(/[.,;)]+$/, '') : null;
+}
+
+// Safety berth radius in metres, e.g. "maintain a minimum distance of 100m".
+// Anchored on "distance of <n>" so a stray number (speed, channel) can't be
+// misread as a distance.
+const DISTANCE_RE = /distance of\s+(\d+(?:\.\d+)?)\s*(?:m\b|metres|meters)/i;
+const DISTANCE_NM_RE =
+  /(?:distance|zone) of\s+(\d+(?:\.\d+)?)\s*(?:nm\b|nautical miles?)/i;
+export function parseDistance(text: string | undefined | null): number | null {
+  if (!text) return null;
+  const source = plain(text);
+  const metres = DISTANCE_RE.exec(source);
+  const nauticalMiles = DISTANCE_NM_RE.exec(source);
+  const amount = Number((metres ?? nauticalMiles)?.[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return nauticalMiles ? amount * 1852 : amount;
 }

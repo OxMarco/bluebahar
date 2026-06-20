@@ -7,28 +7,28 @@
 <body class="bg-paper text-ink">
   <div class="min-h-screen flex">
     {{> admin-sidebar}}
-    <main class="flex-1 p-6 md:p-10">
+    <main class="admin-main">
       <header class="mb-6">
-        <h1 class="text-2xl font-display font-semibold">{{title}}</h1>
-        <p class="text-sm text-ink/60 mt-1">Manually add a notice. Skips the extraction review queue.</p>
+        <h1 class="page-title">{{title}}</h1>
+        <p class="page-subtitle">Manually add a notice. Skips the extraction review queue.</p>
       </header>
 
       {{#if success}}
-        <div class="mb-4 rounded-md border border-good/30 bg-good/10 text-good px-4 py-2 text-sm">{{success}}</div>
+        <div class="alert alert-good mb-4 px-4 py-2 text-sm">{{success}}</div>
       {{/if}}
       {{#if error}}
-        <div class="mb-4 rounded-md border border-bad/30 bg-bad/10 text-bad px-4 py-2 text-sm">{{error}}</div>
+        <div class="alert alert-bad mb-4 px-4 py-2 text-sm">{{error}}</div>
       {{/if}}
 
       <form
         method="post"
         action="/admin/notices"
         enctype="application/x-www-form-urlencoded"
-        class="bg-white border border-ink/10 rounded-xl p-6 max-w-3xl grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm"
+        class="bg-white border border-ink/10 rounded-xl shadow-sm p-6 max-w-3xl grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm"
       >
         <label class="flex flex-col gap-1">
-          <span class="text-xs uppercase tracking-wider text-ink/55">Kind</span>
-          <select name="kind" required class="border border-ink/15 rounded-md px-3 py-2 bg-white">
+          <span class="field-label">Kind</span>
+          <select name="kind" required class="field-input bg-white">
             {{#each kinds}}
               <option value="{{this}}" {{#if (eq this ../form.kind)}}selected{{/if}}>{{this}}</option>
             {{/each}}
@@ -36,57 +36,57 @@
         </label>
 
         <label class="flex flex-col gap-1">
-          <span class="text-xs uppercase tracking-wider text-ink/55">Source URL</span>
-          <input type="url" name="source" required value="{{form.source}}" class="border border-ink/15 rounded-md px-3 py-2" placeholder="https://..." />
+          <span class="field-label">Source URL</span>
+          <input type="url" name="source" required value="{{form.source}}" class="field-input" placeholder="https://..." />
         </label>
 
         <label class="flex flex-col gap-1 sm:col-span-2">
-          <span class="text-xs uppercase tracking-wider text-ink/55">Title</span>
-          <input type="text" name="title" required value="{{form.title}}" class="border border-ink/15 rounded-md px-3 py-2" />
+          <span class="field-label">Title</span>
+          <input type="text" name="title" required value="{{form.title}}" class="field-input" />
         </label>
 
         <label class="flex flex-col gap-1 sm:col-span-2">
-          <span class="text-xs uppercase tracking-wider text-ink/55">Description</span>
-          <textarea name="description" required rows="4" class="border border-ink/15 rounded-md px-3 py-2">{{form.description}}</textarea>
+          <span class="field-label">Description</span>
+          <textarea name="description" required rows="4" class="field-input">{{form.description}}</textarea>
         </label>
 
         <label class="flex flex-col gap-1">
-          <span class="text-xs uppercase tracking-wider text-ink/55">Location label</span>
-          <input type="text" name="locationLabel" value="{{form.locationLabel}}" class="border border-ink/15 rounded-md px-3 py-2" placeholder="optional" />
+          <span class="field-label">Location label</span>
+          <input type="text" name="locationLabel" value="{{form.locationLabel}}" class="field-input" placeholder="optional" />
         </label>
 
         <label class="flex flex-col gap-1">
-          <span class="text-xs uppercase tracking-wider text-ink/55">Sub-key</span>
-          <input type="text" name="subKey" value="{{form.subKey}}" class="border border-ink/15 rounded-md px-3 py-2" placeholder="optional, for source de-dup" />
+          <span class="field-label">Sub-key</span>
+          <input type="text" name="subKey" value="{{form.subKey}}" class="field-input" placeholder="optional, for source de-dup" />
         </label>
 
         <label class="flex flex-col gap-1">
-          <span class="text-xs uppercase tracking-wider text-ink/55">Published at</span>
-          <input type="datetime-local" name="publishedAt" required value="{{datetimeLocal form.publishedAt}}" class="border border-ink/15 rounded-md px-3 py-2" />
+          <span class="field-label">Published at</span>
+          <input type="datetime-local" name="publishedAt" required value="{{datetimeLocal form.publishedAt}}" class="field-input" />
         </label>
 
         <label class="flex flex-col gap-1">
-          <span class="text-xs uppercase tracking-wider text-ink/55">Active from</span>
-          <input type="datetime-local" name="activeFrom" required value="{{datetimeLocal form.activeFrom}}" class="border border-ink/15 rounded-md px-3 py-2" />
+          <span class="field-label">Active from</span>
+          <input type="datetime-local" name="activeFrom" required value="{{datetimeLocal form.activeFrom}}" class="field-input" />
         </label>
 
         <label class="flex flex-col gap-1">
-          <span class="text-xs uppercase tracking-wider text-ink/55">Active to</span>
-          <input type="datetime-local" name="activeTo" value="{{datetimeLocal form.activeTo}}" class="border border-ink/15 rounded-md px-3 py-2" />
+          <span class="field-label">Active to</span>
+          <input type="datetime-local" name="activeTo" value="{{datetimeLocal form.activeTo}}" class="field-input" />
         </label>
 
         <label class="flex flex-col gap-1">
-          <span class="text-xs uppercase tracking-wider text-ink/55">Safety distance (m)</span>
-          <input type="number" min="0" step="any" name="distance" value="{{form.distance}}" class="border border-ink/15 rounded-md px-3 py-2" />
+          <span class="field-label">Safety distance (m)</span>
+          <input type="number" min="0" step="any" name="distance" value="{{form.distance}}" class="field-input" />
         </label>
 
         <div class="sm:col-span-2 flex flex-col gap-3 border-t border-ink/10 pt-4 mt-1">
           <div class="flex items-center justify-between gap-2">
             <div>
-              <span class="text-xs uppercase tracking-wider text-ink/55">Geometries</span>
+              <span class="field-label">Geometries</span>
               <p class="text-xs text-ink/55 mt-1">Add one or more areas. Each can be a point, line, or polygon. Pick a part, then click the map to drop points, or type coordinates directly.</p>
             </div>
-            <button type="button" id="geometry-add-part" class="bg-ink text-white text-xs rounded-md px-3 py-1.5 hover:opacity-90 whitespace-nowrap">Add geometry part</button>
+            <button type="button" id="geometry-add-part" class="btn btn-sm btn-primary whitespace-nowrap">Add geometry part</button>
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
@@ -105,7 +105,7 @@
 
         <div class="sm:col-span-2 flex justify-end gap-2 pt-2">
           <a href="/admin/review" class="text-sm text-ink/60 hover:text-ink px-4 py-2">Cancel</a>
-          <button type="submit" class="bg-ink text-white text-sm rounded-md px-4 py-2 hover:opacity-90">Create</button>
+          <button type="submit" class="btn btn-primary text-sm px-4 py-2">Create</button>
         </div>
       </form>
     </main>

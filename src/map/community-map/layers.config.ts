@@ -4,9 +4,9 @@
 // The map (mid in COMMUNITY_MAP_MID) is hand-curated daily and is authoritative for
 // the GEOMETRY and CLASSIFICATION of marine restriction zones. We take its
 // polygons and the layer it sits in (which IS the classification); we never
-// store its per-placemark description
-// text, which is copyrighted. Descriptions are generated from the facts below
-// (see enrichMapZone) so nothing derivative of the map's prose is stored.
+// store its per-placemark description text. The model extracts its factual rules
+// and rewrites them together with the briefs below (see enrichMapZone), so the
+// source prose itself is not persisted.
 //
 // Only marine layers are listed. The map also carries terrestrial layers (tree
 // protection, camping, inland bird sanctuaries, no-BBQ areas) which we exclude
@@ -16,13 +16,10 @@ import { NoticeKind } from '../notice-kind';
 
 export const COMMUNITY_MAP_SOURCE = 'community-map';
 
-// Every zone polygon is ALSO drawn as a cloud of individually-named corner
-// markers — "(1A) Blue Lagoon – Comino Swimmers' Zone", "(B) Um el Faroud" —
-// one Point per polygon vertex. Their names carry the full zone name (not a
-// bare "(A)"), so they can't be told apart by name; instead we ingest only the
-// polygon/line geometry and discard standalone Points. Every layer here is an
-// area/line restriction zone, so a lone point is always a vertex marker, never
-// a real feature.
+// Zone polygons are also drawn as clouds of corner markers such as "(1A) Blue
+// Lagoon" and "(B) Um el Faroud". Wreck and archaeological layers additionally
+// contain genuine named Points at the exact site coordinates, so those layers
+// opt in to named-point ingestion while prefixed corner markers remain excluded.
 export interface MapLayerDef {
   // Stable identifier used to namespace each zone's hashed subKey so the
   // unique(source, subKey) constraint dedups daily re-imports.
@@ -31,14 +28,15 @@ export interface MapLayerDef {
   // swimmer-zone layer ("… 2026" -> "… 2027") keeps matching.
   match: RegExp;
   kind: NoticeKind;
-  // Our own plain-language brief of what the designation legally is. Seeds the
-  // AI description. These are FACTS about the restriction class (and the law it
-  // rests on), authored by us — not the map's copyrighted placemark prose.
+  // Our own plain-language brief of what the designation legally is. It provides
+  // fallback class context while the placemark description supplies the
+  // zone-specific rules.
   restrictionBrief: string;
   // Optional allow-list for a mixed folder. A folder-level match alone is not
   // enough for "Other Areas", which also contains terrestrial council, park,
   // camping and BBQ restrictions whose geometry happens to touch the coast.
   placemarkMatch?: RegExp;
+  includeNamedPoints?: boolean;
 }
 
 export const MAP_LAYERS: MapLayerDef[] = [
@@ -55,6 +53,7 @@ export const MAP_LAYERS: MapLayerDef[] = [
     key: 'wreck-conservation',
     match: /conservation areas around wrecks/i,
     kind: NoticeKind.ALERT,
+    includeNamedPoints: true,
     restrictionBrief:
       'Conservation area around a protected historic wreck. Entry and mooring ' +
       'are limited to vessels engaged in recreational or technical diving, ' +
@@ -64,6 +63,7 @@ export const MAP_LAYERS: MapLayerDef[] = [
     key: 'archaeological-zones',
     match: /archaeological zones at sea/i,
     kind: NoticeKind.ALERT,
+    includeNamedPoints: true,
     restrictionBrief:
       'Underwater archaeological zone designated by the Superintendence of ' +
       'Cultural Heritage. No-stopping area: anchoring and mooring are ' +

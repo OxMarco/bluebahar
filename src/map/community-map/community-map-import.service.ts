@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -17,7 +17,15 @@ import {
   type ZoneGeometry,
 } from './kml-source';
 import { filterMarineGeometries } from './sea-filter';
-import { parseValidity } from './validity';
+import { DateTime } from 'luxon';
+import {
+  parseDistance,
+  parseNoticeDate,
+  parseNoticeRef,
+  parseSourceUrl,
+  parseValidity,
+  type Validity,
+} from './validity';
 import {
   COMMUNITY_MAP_SOURCE,
   MAP_LAYERS,
@@ -31,6 +39,11 @@ import {
 export const DEFAULT_COMMUNITY_MAP_MID = '12ttvcu19lSEIV8blQwx8ZYaCt14gv38';
 const MIN_EXPECTED_ZONE_COUNT = 50;
 const MIN_EXISTING_RETENTION_RATIO = 0.6;
+const ENRICH_CONCURRENCY = 8;
+const RESTRICTIONS_HEADING = 'Restrictions:';
+const REVIEW_AI_ENRICHMENT_FAILED = 'community-map-ai-enrichment-failed';
+const REVIEW_SOURCE_DESCRIPTION_MISSING =
+  'community-map-source-description-missing';
 
 type NoticePart = NoticeToMariners['areas'][number];
 
@@ -51,7 +64,16 @@ type CommunityMapRow = Pick<
   | 'activeFrom'
   | 'needsReview'
   | 'reviewReasons'
-> & { activeTo: Date | null };
+> & {
+  // Nullable facts we derive from the placemark. Modelled as `T | null` (not the
+  // entity's `T | undefined`) so the upsert explicitly clears a column when the
+  // source drops a value, rather than leaving the prior one in place.
+  activeTo: Date | null;
+  category: string | null;
+  noticeRef: string | null;
+  sourceUrl: string | null;
+  distance: number | null;
+};
 
 export interface SnapshotZone {
   layer: MapLayerDef;
@@ -59,6 +81,10 @@ export interface SnapshotZone {
   subKey: string;
   geometries: ZoneGeometry[];
   sourceDescription: string;
+  // The KML folder label this zone came from. Carries the establishing notice
+  // reference (e.g. "… Notice to Mariners 09 & 10 of 2023") for the permanent
+  // layers, whose placemark descriptions state no date. Read for the year only.
+  folderName: string;
 }
 
 export interface CommunityMapSnapshot {
@@ -71,13 +97,12 @@ export interface CommunityMapSnapshot {
 // behavior; errors deliberately escape this service so transient failures are
 // retried instead of being delayed until the next daily run.
 @Injectable()
-export class CommunityMapImportService {
+export class CommunityMapImportService implements OnModuleInit {
   private readonly logger = new Logger(CommunityMapImportService.name);
-  // Optional: when AI descriptions are off (or no key is set) the import still
-  // runs, falling back to the self-authored restriction brief. Keeps local
-  // testing cheap and key-free (set COMMUNITY_MAP_DESCRIBE_WITH_AI=false).
-  private readonly openai: OpenAI | null;
-  private readonly aiDescribe: boolean;
+  // Every complete zone description is AI-generated from the map's source facts
+  // and rewritten rather than copied. OPENAI_API_KEY is required so construction
+  // fails fast if it is unset.
+  private readonly openai: OpenAI;
   private readonly enrichModel?: string;
   private readonly mid: string;
   private readonly enabled: boolean;
@@ -89,15 +114,37 @@ export class CommunityMapImportService {
     @InjectRepository(Logs)
     private readonly logsRepository: Repository<Logs>,
   ) {
-    const apiKey = config.get<string>('OPENAI_API_KEY');
-    this.openai = apiKey ? new OpenAI({ apiKey }) : null;
-    this.aiDescribe =
-      config.get<boolean>('COMMUNITY_MAP_DESCRIBE_WITH_AI') ?? true;
+    this.openai = new OpenAI({ apiKey: config.get<string>('OPENAI_API_KEY') });
     this.enrichModel =
       config.get<string>('ENRICH_MODEL') ?? config.get<string>('OPENAI_MODEL');
     this.mid =
       config.get<string>('COMMUNITY_MAP_MID') ?? DEFAULT_COMMUNITY_MAP_MID;
     this.enabled = config.get<boolean>('COMMUNITY_MAP_IMPORT_ENABLED') ?? true;
+  }
+
+  // Validate OPENAI_API_KEY at startup so a bad/expired/forbidden key crashes
+  // the process immediately instead of silently degrading the daily import.
+  // The throw propagates through Nest's init phase to bootstrap()'s catch, which
+  // exits the process. A lightweight models.list() is enough to exercise auth.
+  // Transient/network failures are not fatal — the key is only proven *invalid*
+  // by a 401/403, so we crash on those alone and merely warn on anything else.
+  async onModuleInit(): Promise<void> {
+    if (!this.enabled) return;
+    try {
+      await this.openai.models.list();
+    } catch (err) {
+      if (
+        err instanceof OpenAI.AuthenticationError ||
+        err instanceof OpenAI.PermissionDeniedError
+      ) {
+        throw new Error(
+          `OPENAI_API_KEY rejected by OpenAI: ${errorMessage(err)}`,
+        );
+      }
+      this.logger.warn(
+        `Could not verify OPENAI_API_KEY at startup (continuing): ${errorMessage(err)}`,
+      );
+    }
   }
 
   async importCommunityMap(): Promise<void> {
@@ -130,35 +177,92 @@ export class CommunityMapImportService {
     const toWrite: CommunityMapRow[] = [];
     let aiCalls = 0;
     let kept = 0;
+    let upserted = 0;
     const importedAt = new Date();
+    const bootstrap = existing.size === 0;
 
-    for (const zone of snapshot.zones) {
-      const { layer, zoneName, subKey } = zone;
-      seen.add(subKey);
-      const areas = toAreas(zoneName, zone.geometries);
-      const prior = existing.get(subKey);
+    for (
+      let offset = 0;
+      offset < snapshot.zones.length;
+      offset += ENRICH_CONCURRENCY
+    ) {
+      const batch = snapshot.zones.slice(offset, offset + ENRICH_CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(async (zone): Promise<ProcessedZone> => {
+          const { layer, zoneName, subKey } = zone;
+          seen.add(subKey);
+          const areas = toAreas(zoneName, zone.geometries);
+          const prior = existing.get(subKey);
 
-      // Reuse the prior description when the zone's identity is unchanged so we
-      // don't re-bill the LLM on every daily run.
-      let description = prior?.description;
-      if (!description) {
-        description = await this.describe(layer, zoneName);
-        if (this.aiDescribe && this.openai) aiCalls += 1;
-      }
+          const { fields, seasonal } = resolveZoneFacts(
+            zone,
+            prior,
+            areas,
+            importedAt,
+          );
 
-      const row = buildCommunityMapRow(
-        zone,
-        prior,
-        areas,
-        description,
-        importedAt,
+          // Reuse prior output unless a prompt fact changed, it predates the
+          // structured restrictions format, or an importer failure needs retrying.
+          const stale =
+            !prior ||
+            descriptionFactsChanged(prior, fields, seasonal) ||
+            !hasCurrentDescriptionFormat(prior.description) ||
+            prior.reviewReasons?.some((reason) =>
+              reason.startsWith('community-map-'),
+            );
+          let description = prior?.description;
+          let reviewReasons = prior?.reviewReasons ?? [];
+          let attemptedAi = false;
+          if (!description || stale) {
+            const result = await this.describe(
+              layer,
+              zoneName,
+              zone.sourceDescription,
+              {
+                seasonal,
+                distance: fields.distance,
+                noticeRef: fields.noticeRef,
+              },
+              prior?.description,
+            );
+            description = result.description;
+            reviewReasons = result.reviewReasons;
+            attemptedAi = result.attemptedAi;
+          }
+
+          const row: CommunityMapRow = {
+            ...fields,
+            description,
+            needsReview: reviewReasons.length > 0,
+            reviewReasons,
+          };
+          const isKept = Boolean(prior && unchanged(prior, row));
+          return {
+            row: isKept ? null : row,
+            kept: isKept,
+            attemptedAi,
+          };
+        }),
       );
 
-      if (prior && unchanged(prior, row)) {
-        kept += 1;
-        continue;
+      aiCalls += results.filter((result) => result.attemptedAi).length;
+      kept += results.filter((result) => result.kept).length;
+      const batchRows = results
+        .map((result) => result.row)
+        .filter((row): row is CommunityMapRow => row !== null);
+
+      if (bootstrap && batchRows.length > 0) {
+        // With an empty database, publish each completed batch instead of keeping
+        // the map blank while every AI call finishes. Existing installations keep
+        // the atomic transaction below and remain on their last approved snapshot.
+        await this.noticeRepository.upsert(
+          batchRows as QueryDeepPartialEntity<NoticeToMariners>[],
+          ['source', 'subKey'],
+        );
+        upserted += batchRows.length;
+      } else {
+        toWrite.push(...batchRows);
       }
-      toWrite.push(row);
     }
 
     const stale = [...existing.keys()].filter((k) => !seen.has(k));
@@ -174,6 +278,7 @@ export class CommunityMapImportService {
           toWrite as QueryDeepPartialEntity<NoticeToMariners>[],
           ['source', 'subKey'],
         );
+        upserted += toWrite.length;
       }
       if (stale.length) {
         await repository
@@ -187,40 +292,71 @@ export class CommunityMapImportService {
     });
 
     return {
-      upserted: toWrite.length,
+      upserted,
       deleted: stale.length,
       kept,
       aiCalls,
     };
   }
 
-  // Generate our own description; never feed or store the map's copyrighted
-  // prose. On LLM failure fall back to the (self-authored) restriction brief so
-  // a zone still gets a usable, original description.
+  // Extract the map's source facts into original wording. The source prose is
+  // sent to the model as untrusted input but is never stored. Failures retain the
+  // previous description (or our brief for a new row) and send the row to review.
   private async describe(
     layer: MapLayerDef,
     zoneName: string,
-  ): Promise<string> {
-    // No key / AI disabled: use the self-authored brief verbatim — still
-    // original text, never the map's prose.
-    const client = this.openai;
-    if (!this.aiDescribe || !client) return layer.restrictionBrief;
+    sourceDescription: string,
+    facts: PromptFacts,
+    priorDescription?: string,
+  ): Promise<DescriptionResult> {
+    const sourceText = plainSourceText(sourceDescription);
+    if (!sourceText) {
+      return {
+        description: usablePriorDescription(priorDescription)
+          ? priorDescription
+          : fallbackDescription(layer),
+        reviewReasons: [REVIEW_SOURCE_DESCRIPTION_MISSING],
+        attemptedAi: false,
+      };
+    }
     try {
       const e = await enrichMapZone(
-        client,
+        this.openai,
         {
           category: layer.key.replace(/-/g, ' '),
           zoneName,
           restrictionBrief: layer.restrictionBrief,
+          sourceText,
+          facts: factLines(facts),
         },
         this.enrichModel,
       );
-      return composeDescription(e) || layer.restrictionBrief;
+      return {
+        description: composeDescription(e),
+        reviewReasons: [],
+        attemptedAi: true,
+      };
     } catch (err) {
+      // A bad/expired/forbidden API key fails every zone, not just this one.
+      // Don't swallow it as a per-zone fallback: re-throw so the import aborts
+      // and the BullMQ processor surfaces the failure instead of silently
+      // marking every zone for review.
+      if (
+        err instanceof OpenAI.AuthenticationError ||
+        err instanceof OpenAI.PermissionDeniedError
+      ) {
+        throw err;
+      }
       this.logger.warn(
         `Map-zone description fell back for "${zoneName}": ${errorMessage(err)}`,
       );
-      return layer.restrictionBrief;
+      return {
+        description: usablePriorDescription(priorDescription)
+          ? priorDescription
+          : fallbackDescription(layer),
+        reviewReasons: [REVIEW_AI_ENRICHMENT_FAILED],
+        attemptedAi: true,
+      };
     }
   }
 
@@ -234,29 +370,114 @@ export class CommunityMapImportService {
   }
 }
 
-function buildCommunityMapRow(
+// The fact fields a community-map row stores, before its (AI) description is
+// attached. Carried alongside `seasonal` — the parsed validity window — which
+// the prompt and staleness check need but the row doesn't store.
+type CommunityMapFields = Omit<CommunityMapRow, 'description'>;
+
+// The subset of facts that feed the LLM prompt (and so decide whether a reused
+// description has gone stale).
+interface PromptFacts {
+  seasonal: Validity;
+  distance: number | null;
+  noticeRef: string | null;
+}
+
+interface DescriptionResult {
+  description: string;
+  reviewReasons: string[];
+  attemptedAi: boolean;
+}
+
+interface ProcessedZone {
+  row: CommunityMapRow | null;
+  kept: boolean;
+  attemptedAi: boolean;
+}
+
+function resolveZoneFacts(
   zone: SnapshotZone,
   prior: NoticeToMariners | undefined,
   areas: NoticePart[],
-  description: string,
   importedAt: Date,
-): CommunityMapRow {
-  const active = parseValidity(zone.sourceDescription);
-  const activeFrom = active.from ?? prior?.activeFrom ?? importedAt;
+): { fields: CommunityMapFields; seasonal: Validity } {
+  const seasonal = parseValidity(zone.sourceDescription);
+  // activeFrom precedence: a date stated in the notice prose, else the year of
+  // the establishing notice (standing "all year round" zones — their date is
+  // the notice reference in the description or folder label), else a prior
+  // value, and only as a last resort the scrape time. The notice date precedes
+  // `prior` deliberately: it corrects rows imported before this fallback existed
+  // (which carry a meaningless scrape-day activeFrom) instead of pinning them.
+  const noticeDate =
+    parseNoticeDate(zone.sourceDescription) ?? parseNoticeDate(zone.folderName);
+  const activeFrom =
+    seasonal.from ?? noticeDate ?? prior?.activeFrom ?? importedAt;
+  // The notice reference lives in the description (swimmer zones) or only in the
+  // folder label (permanent layers); the URL and distance are description-only.
   return {
-    kind: zone.layer.kind,
-    title: zone.zoneName,
-    description,
-    source: COMMUNITY_MAP_SOURCE,
-    subKey: zone.subKey,
-    locationLabel: zone.zoneName,
-    areas,
-    publishedAt: prior?.publishedAt ?? activeFrom,
-    activeFrom,
-    activeTo: active.to ?? null,
-    needsReview: false,
-    reviewReasons: [],
+    seasonal,
+    fields: {
+      kind: zone.layer.kind,
+      title: zone.zoneName,
+      source: COMMUNITY_MAP_SOURCE,
+      subKey: zone.subKey,
+      locationLabel: zone.zoneName,
+      category: zone.layer.key,
+      noticeRef:
+        parseNoticeRef(zone.sourceDescription) ??
+        parseNoticeRef(zone.folderName),
+      sourceUrl: parseSourceUrl(zone.sourceDescription),
+      distance: parseDistance(zone.sourceDescription),
+      areas,
+      publishedAt: prior?.publishedAt ?? activeFrom,
+      activeFrom,
+      activeTo: seasonal.to ?? null,
+      needsReview: prior?.needsReview ?? false,
+      reviewReasons: prior?.reviewReasons ?? [],
+    },
   };
+}
+
+// The notice-year fallback (Jan 1) is not a real start date, so we only state a
+// validity period to the model when the prose gave a genuine seasonal window.
+function fmtDate(date: Date): string {
+  return DateTime.fromJSDate(date, { zone: 'utc' }).toFormat('d LLLL yyyy');
+}
+
+function factLines({ seasonal, distance, noticeRef }: PromptFacts): string[] {
+  const lines: string[] = [];
+  if (distance != null) {
+    lines.push(`Vessels must keep at least ${distance} m clear.`);
+  }
+  if (seasonal.from) {
+    lines.push(
+      seasonal.to
+        ? `In force from ${fmtDate(seasonal.from)} until ${fmtDate(seasonal.to)}.`
+        : `In force from ${fmtDate(seasonal.from)}.`,
+    );
+  }
+  if (noticeRef) lines.push(`Established by ${noticeRef}.`);
+  return lines;
+}
+
+// Whether a reused description would misstate the zone: any prompt input — place
+// name, class, clearance distance, governing notice, or the seasonal window —
+// differs from what the prior row was generated against.
+function descriptionFactsChanged(
+  prior: NoticeToMariners,
+  fields: CommunityMapFields,
+  seasonal: Validity,
+): boolean {
+  return (
+    prior.title !== fields.title ||
+    (prior.category ?? null) !== fields.category ||
+    (prior.distance ?? null) !== fields.distance ||
+    (prior.noticeRef ?? null) !== fields.noticeRef ||
+    !sameInstant(prior.activeTo, fields.activeTo) ||
+    (seasonal.from
+      ? prior.activeFrom.getTime() !== seasonal.from.getTime()
+      : false)
+  );
 }
 
 export function buildCommunityMapSnapshot(
@@ -269,6 +490,7 @@ export function buildCommunityMapSnapshot(
       layer: MapLayerDef;
       zoneName: string;
       sourceDescription: string;
+      folderName: string;
       geometries: Map<string, ZoneGeometry>;
     }
   >();
@@ -282,7 +504,7 @@ export function buildCommunityMapSnapshot(
       if (!matchesPlacemark(layer, zoneName)) continue;
 
       const marine = filterMarineGeometries(
-        placemark.geometries.filter((geometry) => geometry.type !== 'point'),
+        importableGeometries(layer, zoneName, placemark.geometries),
       );
       if (marine.length === 0) continue;
       matchedLayerKeys.add(layer.key);
@@ -292,6 +514,7 @@ export function buildCommunityMapSnapshot(
         layer,
         zoneName,
         sourceDescription: placemark.description,
+        folderName: folder.name,
         geometries: new Map<string, ZoneGeometry>(),
       };
       if (!group.sourceDescription && placemark.description) {
@@ -314,6 +537,7 @@ export function buildCommunityMapSnapshot(
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([, geometry]) => geometry),
         sourceDescription: group.sourceDescription,
+        folderName: group.folderName,
       }),
     )
     .sort((a, b) => a.subKey.localeCompare(b.subKey));
@@ -368,6 +592,22 @@ function normalizedIdentity(name: string): string {
   return normalizeZoneName(name).toLocaleLowerCase('en');
 }
 
+function importableGeometries(
+  layer: MapLayerDef,
+  placemarkName: string,
+  geometries: ZoneGeometry[],
+): ZoneGeometry[] {
+  const includePoint =
+    layer.includeNamedPoints === true && !isVertexMarkerName(placemarkName);
+  return geometries.filter(
+    (geometry) => geometry.type !== 'point' || includePoint,
+  );
+}
+
+function isVertexMarkerName(name: string): boolean {
+  return /^\([^)]{1,8}\)\s*/.test(name);
+}
+
 function canonicalGeometry(geometry: ZoneGeometry): string {
   const points = geometry.points.map(
     ([longitude, latitude]) => `${longitude.toFixed(7)},${latitude.toFixed(7)}`,
@@ -408,16 +648,49 @@ function toAreas(label: string, geoms: ZoneGeometry[]): NoticePart[] {
 }
 
 function composeDescription(e: MapZoneEnrichment): string {
-  return [e.summary, e.recommended_action]
+  const restrictions = e.restrictions
+    .map((restriction) => restriction.trim())
+    .filter(Boolean)
+    .map((restriction) => `- ${restriction}`)
+    .join('\n');
+  return [e.summary, `${RESTRICTIONS_HEADING}\n${restrictions}`]
     .map((s) => s.trim())
     .filter(Boolean)
     .join('\n\n');
 }
 
+function fallbackDescription(layer: MapLayerDef): string {
+  return layer.restrictionBrief;
+}
+
+function usablePriorDescription(
+  description: string | undefined,
+): description is string {
+  return Boolean(
+    description &&
+    !description.includes('Source details require manual verification.'),
+  );
+}
+
+function hasCurrentDescriptionFormat(description: string): boolean {
+  return (
+    description.includes(`\n\n${RESTRICTIONS_HEADING}\n`) &&
+    !description.includes('\n\nRecommended action:')
+  );
+}
+
+function plainSourceText(description: string): string {
+  return description
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // A prior row equals a freshly built one when nothing a client sees changed —
-// classification, title, description, geometry and the validity window. (Undated
-// zones carry the prior activeFrom forward, so it never triggers a write on its
-// own; a parsed seasonal date that moves does.)
+// classification, title, description, geometry and the validity window. Standing
+// zones resolve to a deterministic notice-year activeFrom (or, lacking any date,
+// the carried-forward prior value), so a re-import is a no-op once corrected; a
+// parsed seasonal date that moves still triggers a write.
 function unchanged(prior: NoticeToMariners, next: CommunityMapRow): boolean {
   return (
     prior.kind === next.kind &&
@@ -425,6 +698,13 @@ function unchanged(prior: NoticeToMariners, next: CommunityMapRow): boolean {
     prior.description === next.description &&
     prior.activeFrom.getTime() === next.activeFrom.getTime() &&
     sameInstant(prior.activeTo, next.activeTo) &&
+    (prior.category ?? null) === next.category &&
+    (prior.noticeRef ?? null) === next.noticeRef &&
+    (prior.sourceUrl ?? null) === next.sourceUrl &&
+    (prior.distance ?? null) === next.distance &&
+    prior.needsReview === next.needsReview &&
+    JSON.stringify(prior.reviewReasons ?? []) ===
+      JSON.stringify(next.reviewReasons) &&
     JSON.stringify(prior.areas) === JSON.stringify(next.areas)
   );
 }

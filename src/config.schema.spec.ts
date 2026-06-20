@@ -33,10 +33,9 @@ describe('configSchema', () => {
     expect(configSchema.safeParse(validEnv).success).toBe(true);
   });
 
-  it('treats blank optional map and AI values as unset', () => {
+  it('treats blank optional map and model values as unset', () => {
     const result = configSchema.safeParse({
       ...validEnv,
-      OPENAI_API_KEY: '',
       OPENAI_MODEL: '',
       ENRICH_MODEL: '',
       COMMUNITY_MAP_MID: '',
@@ -52,6 +51,15 @@ describe('configSchema', () => {
     expect(errorPaths(incomplete)).toEqual(
       expect.arrayContaining(['DB_PASSWORD', 'ADMIN_API_KEY']),
     );
+  });
+
+  it('requires the OpenAI key — descriptions are always AI-generated', () => {
+    expect(errorPaths({ ...validEnv, OPENAI_API_KEY: '' })).toContain(
+      'OPENAI_API_KEY',
+    );
+    const withoutKey: Record<string, unknown> = { ...validEnv };
+    delete withoutKey.OPENAI_API_KEY;
+    expect(errorPaths(withoutKey)).toContain('OPENAI_API_KEY');
   });
 
   it('rejects invalid ports, throttling values, and sample rates', () => {

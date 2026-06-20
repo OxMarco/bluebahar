@@ -6,11 +6,11 @@
 <body class="bg-paper text-ink">
   <div class="min-h-screen flex">
     {{> admin-sidebar}}
-    <main class="flex-1 p-6 md:p-10">
-      <header class="mb-6 flex items-end justify-between gap-4 flex-wrap">
+    <main class="admin-main">
+      <header class="page-header">
         <div>
-          <h1 class="text-2xl font-display font-semibold">{{title}}</h1>
-          <p class="text-sm text-ink/60 mt-1">Reports submitted by boaters against a point on the map. Newest first.</p>
+          <h1 class="page-title">{{title}}</h1>
+          <p class="page-subtitle">Reports submitted by boaters against a point on the map. Newest first.</p>
         </div>
         <div class="flex items-center gap-1 text-sm bg-ink/5 rounded-lg p-1">
           <a href="/admin/reports" class="px-3 py-1 rounded-md {{#unless resolved}}bg-white font-medium{{else}}text-ink/60{{/unless}}">Open</a>
@@ -19,9 +19,9 @@
       </header>
 
       {{#if reports.length}}
-        <div class="overflow-x-auto border border-ink/10 rounded-xl bg-white">
-          <table class="min-w-full text-sm">
-            <thead class="text-left text-xs uppercase tracking-wider text-ink/55 border-b border-ink/10">
+        <div class="table-wrap">
+          <table class="min-w-full text-sm cards-sm">
+            <thead class="table-head">
               <tr>
                 <th class="px-4 py-3">Report</th>
                 <th class="px-4 py-3">Location</th>
@@ -29,14 +29,14 @@
                 <th class="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-ink/5">
+            <tbody class="table-body">
               {{#each reports}}
                 <tr id="row-{{this.id}}">
-                  <td class="px-4 py-3 align-top">
+                  <td class="px-4 py-3 align-top" data-label="Report">
                     <div class="font-medium">{{this.title}}</div>
                     <div class="text-xs text-ink/55 mt-0.5">{{this.description}}</div>
                   </td>
-                  <td class="px-4 py-3 align-top text-xs">
+                  <td class="px-4 py-3 align-top text-xs" data-label="Location">
                     <a
                       href="https://www.openstreetmap.org/?mlat={{this.latitude}}&mlon={{this.longitude}}#map=14/{{this.latitude}}/{{this.longitude}}"
                       target="_blank"
@@ -44,15 +44,16 @@
                       class="text-ink/70 hover:underline"
                     >{{this.latitude}}, {{this.longitude}}</a>
                   </td>
-                  <td class="px-4 py-3 align-top text-xs">{{formatDate this.createdAt}}</td>
-                  <td class="px-4 py-3 align-top">
+                  <td class="px-4 py-3 align-top text-xs" data-label="Submitted">{{formatDate this.createdAt}}</td>
+                  <td class="px-4 py-3 align-top" data-label="Actions">
                     <div class="row-actions flex gap-2 justify-end">
                       {{#unless this.resolved}}
                         <button
                           hx-post="/admin/reports/{{this.id}}/resolve"
                           hx-target="#row-{{this.id}}"
                           hx-swap="outerHTML"
-                          class="text-xs bg-good text-white rounded-md px-3 py-1.5 hover:opacity-90"
+                          class="btn btn-sm btn-good"
+                          data-toast="Report resolved"
                         >Resolve</button>
                       {{/unless}}
                       <button
@@ -60,7 +61,8 @@
                         hx-target="#row-{{this.id}}"
                         hx-swap="outerHTML"
                         hx-confirm="Permanently delete this report?"
-                        class="text-xs bg-bad text-white rounded-md px-3 py-1.5 hover:opacity-90"
+                        class="btn btn-sm btn-danger"
+                        data-toast="Report deleted"
                       >Delete</button>
                     </div>
                   </td>
@@ -71,7 +73,7 @@
         </div>
         {{> admin-pagination}}
       {{else}}
-        <div class="border border-ink/10 rounded-xl bg-white p-10 text-center text-ink/60">
+        <div class="empty-state">
           {{#if resolved}}No resolved reports.{{else}}No open reports.{{/if}}
         </div>
       {{/if}}

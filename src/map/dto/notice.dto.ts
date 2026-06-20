@@ -53,9 +53,15 @@ export class BoundingCircleDto {
 export class NoticeDto {
   id!: string;
   kind!: NoticeKind;
+  // Restriction class (community-map layer key) for icon/colour/filter; null
+  // when the notice names none.
+  category?: string | null;
   title!: string;
   description!: string;
   source!: string;
+  // Establishing notice reference and a deep-link to the authoritative notice.
+  noticeRef?: string | null;
+  sourceUrl?: string | null;
   locationLabel?: string | null;
   activeFrom!: string;
   activeTo?: string | null;

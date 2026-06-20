@@ -16,6 +16,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import hbs from 'hbs';
+import { DateTime } from 'luxon';
 import { join } from 'node:path';
 import { AppModule } from './app.module';
 
@@ -130,12 +131,39 @@ async function bootstrap() {
     JSON.stringify(value ?? null).replace(/</g, '\\u003c'),
   );
   hbs.registerHelper('add', (a: unknown, b: unknown) => Number(a) + Number(b));
+  // Coerce a Date | ISO string | epoch number into a luxon DateTime, or null if
+  // it isn't a usable date. Shared by the formatting helpers below.
+  const toDateTime = (value: unknown): DateTime | null => {
+    if (value === null || value === undefined || value === '') return null;
+    if (value instanceof Date) {
+      const dt = DateTime.fromJSDate(value);
+      return dt.isValid ? dt : null;
+    }
+    if (typeof value === 'number') {
+      const dt = DateTime.fromMillis(value);
+      return dt.isValid ? dt : null;
+    }
+    if (typeof value === 'string') {
+      const dt = DateTime.fromISO(value);
+      return dt.isValid ? dt : null;
+    }
+    return null;
+  };
+  // Human-readable timestamp for the admin tables, e.g. "19 Jun 2026, 23:41".
+  // Falls back to the raw value so a malformed date is still visible, not blank.
   hbs.registerHelper('formatDate', (value: unknown) => {
-    if (value === null || value === undefined || value === '') return '';
-    if (value instanceof Date) return value.toISOString();
-    if (typeof value !== 'string' && typeof value !== 'number') return '';
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? String(value) : d.toISOString();
+    const dt = toDateTime(value);
+    if (dt) return dt.toFormat('dd LLL yyyy, HH:mm');
+    // Show the raw value only when it's a primitive worth displaying; objects
+    // would stringify to a useless '[object Object]', so blank those.
+    return typeof value === 'string' || typeof value === 'number'
+      ? String(value)
+      : '';
+  });
+  // Relative phrasing for activity feeds, e.g. "2 hours ago". Empty for non-dates.
+  hbs.registerHelper('formatRelative', (value: unknown) => {
+    const dt = toDateTime(value);
+    return dt ? (dt.toRelative() ?? '') : '';
   });
   hbs.registerHelper('datetimeLocal', (value: unknown) => {
     if (value === null || value === undefined || value === '') return '';

@@ -89,9 +89,12 @@ export function toNoticeDto(entity: NoticeToMariners): NoticeDto {
   return {
     id: entity.id,
     kind: entity.kind,
+    category: entity.category ?? null,
     title: entity.title,
     description: entity.description,
     source: entity.source,
+    noticeRef: entity.noticeRef ?? null,
+    sourceUrl: entity.sourceUrl ?? null,
     locationLabel: entity.locationLabel ?? null,
     activeFrom: entity.activeFrom.toISOString(),
     activeTo: entity.activeTo ? entity.activeTo.toISOString() : null,

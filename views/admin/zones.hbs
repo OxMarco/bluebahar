@@ -7,10 +7,10 @@
 <body class="bg-paper text-ink">
   <div class="min-h-screen flex">
     {{> admin-sidebar}}
-    <main class="flex-1 p-6 md:p-10">
+    <main class="admin-main">
       <header class="mb-4">
-        <h1 class="text-2xl font-display font-semibold">{{title}}</h1>
-        <p class="text-sm text-ink/60 mt-1">
+        <h1 class="page-title">{{title}}</h1>
+        <p class="page-subtitle">
           Every notice with geometry, drawn on one map.
           <strong>{{total}}</strong> zone(s):
           <strong>{{communityCount}}</strong> from the community map,
@@ -20,15 +20,25 @@
       </header>
 
       {{#if total}}
-        <div class="zones-legend mb-3">
-          <span><i class="zones-swatch" style="background:#0e7490"></i> Community map</span>
-          <span><i class="zones-swatch" style="background:#152051"></i> Manual</span>
-          <span><i class="zones-swatch" style="background:#b45309"></i> Needs review</span>
+        <div class="layer-toolbar mb-3">
+          <div class="layer-group">
+            <span class="layer-group-label">Notices</span>
+            <button type="button" class="layer-toggle" data-notice-layer="notices" data-color="#152051" aria-pressed="true">
+              <i class="layer-swatch"></i> Notices
+            </button>
+            <button type="button" class="layer-toggle" data-notice-layer="review" data-color="#b45309" data-style="ring" aria-pressed="true">
+              <i class="layer-swatch"></i> Needs review
+            </button>
+          </div>
+          <div class="layer-group" id="dataset-toggles" hidden>
+            <span class="layer-group-label">Reference layers</span>
+            {{!-- dataset toggles are injected by admin-zones-map.js --}}
+          </div>
         </div>
         <div id="zones-map" class="zones-map"></div>
         <script type="application/json" id="zones-data">{{{json featureCollection}}}</script>
       {{else}}
-        <div class="border border-ink/10 rounded-xl bg-white p-10 text-center text-ink/60">
+        <div class="empty-state">
           No zones with geometry yet. If the community-map import just ran, give it a moment and refresh.
         </div>
       {{/if}}

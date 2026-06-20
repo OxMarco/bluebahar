@@ -6,23 +6,23 @@
 <body class="bg-paper text-ink">
   <div class="min-h-screen flex">
     {{> admin-sidebar}}
-    <main class="flex-1 p-6 md:p-10">
-      <header class="mb-6 flex items-end justify-between gap-4 flex-wrap">
+    <main class="admin-main">
+      <header class="page-header">
         <div>
-          <h1 class="text-2xl font-display font-semibold">{{title}}</h1>
-          <p class="text-sm text-ink/60 mt-1">Notices reported as inaccurate by users. Sorted by report count, descending.</p>
+          <h1 class="page-title">{{title}}</h1>
+          <p class="page-subtitle">Notices reported as inaccurate by users. Sorted by report count, descending.</p>
         </div>
-        <form method="get" class="flex items-center gap-2 text-sm">
+        <form method="get" class="filter-form">
           <label for="minReports" class="text-ink/60">Min reports</label>
-          <input type="number" min="1" name="minReports" id="minReports" value="{{minReports}}" class="w-20 border border-ink/15 rounded-md px-2 py-1" />
-          <button type="submit" class="px-3 py-1 bg-ink text-white rounded-md hover:opacity-90">Filter</button>
+          <input type="number" min="1" name="minReports" id="minReports" value="{{minReports}}" class="w-20 field-input-sm" />
+          <button type="submit" class="btn btn-primary px-3 py-1">Filter</button>
         </form>
       </header>
 
       {{#if notices.length}}
-        <div class="overflow-x-auto border border-ink/10 rounded-xl bg-white">
-          <table class="min-w-full text-sm">
-            <thead class="text-left text-xs uppercase tracking-wider text-ink/55 border-b border-ink/10">
+        <div class="table-wrap">
+          <table class="min-w-full text-sm cards-sm">
+            <thead class="table-head">
               <tr>
                 <th class="px-4 py-3">Title</th>
                 <th class="px-4 py-3">Kind</th>
@@ -31,10 +31,10 @@
                 <th class="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-ink/5">
+            <tbody class="table-body">
               {{#each notices}}
                 <tr id="row-{{this.id}}">
-                  <td class="px-4 py-3 align-top">
+                  <td class="px-4 py-3 align-top" data-label="Notice">
                     <div class="flex items-center gap-2">
                       <span class="font-medium">{{this.title}}</span>
                       <span class="text-[11px] font-semibold bg-bad/10 text-bad rounded-full px-2 py-0.5" title="user reports">{{this.reports}}</span>
@@ -44,28 +44,30 @@
                       <div class="text-[11px] text-ink/45 mt-1">{{this.locationLabel}}</div>
                     {{/if}}
                   </td>
-                  <td class="px-4 py-3 align-top"><span class="inline-block text-[11px] uppercase tracking-wider bg-ink/5 rounded px-2 py-0.5">{{this.kind}}</span></td>
-                  <td class="px-4 py-3 align-top text-xs">
+                  <td class="px-4 py-3 align-top" data-label="Kind"><span class="badge">{{this.kind}}</span></td>
+                  <td class="px-4 py-3 align-top text-xs" data-label="Active">
                     <div>{{formatDate this.activeFrom}}</div>
                     {{#if this.activeTo}}<div class="text-ink/50">→ {{formatDate this.activeTo}}</div>{{else}}<div class="text-ink/50">→ no expiry</div>{{/if}}
                   </td>
-                  <td class="px-4 py-3 align-top text-xs">
+                  <td class="px-4 py-3 align-top text-xs" data-label="Source">
                     <a href="{{this.source}}" target="_blank" rel="noopener" class="text-ink/70 hover:underline break-all">{{this.source}}</a>
                   </td>
-                  <td class="px-4 py-3 align-top">
+                  <td class="px-4 py-3 align-top" data-label="Actions">
                     <div class="row-actions flex gap-2 justify-end">
                       <button
                         hx-post="/admin/notices/{{this.id}}/dismiss-reports"
                         hx-target="#row-{{this.id}}"
                         hx-swap="outerHTML"
-                        class="text-xs bg-warning text-ink rounded-md px-3 py-1.5 hover:opacity-90"
+                        class="btn btn-sm btn-warning"
+                        data-toast="Reports dismissed"
                       >Dismiss reports</button>
                       <button
                         hx-delete="/admin/notices/{{this.id}}"
                         hx-target="#row-{{this.id}}"
                         hx-swap="outerHTML"
                         hx-confirm="Permanently delete this notice?"
-                        class="text-xs bg-bad text-white rounded-md px-3 py-1.5 hover:opacity-90"
+                        class="btn btn-sm btn-danger"
+                        data-toast="Notice deleted"
                       >Delete</button>
                     </div>
                   </td>
@@ -76,7 +78,7 @@
         </div>
         {{> admin-pagination}}
       {{else}}
-        <div class="border border-ink/10 rounded-xl bg-white p-10 text-center text-ink/60">
+        <div class="empty-state">
           No notices with ≥ {{minReports}} report(s).
         </div>
       {{/if}}

@@ -48,16 +48,39 @@ function text(node: Element | null): string {
 
 // "lon,lat,alt lon,lat,alt …" (whitespace between tuples, comma within) -> points.
 function parseCoordinates(raw: string): LngLat[] {
-  return raw
-    .trim()
-    .split(/\s+/)
-    .map((tuple): LngLat | null => {
-      const [lon, lat] = tuple.split(',');
-      const x = Number(lon);
-      const y = Number(lat);
-      return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
-    })
-    .filter((p): p is LngLat => p !== null);
+  const tuples = raw.trim().split(/\s+/).filter(Boolean);
+  if (tuples.length === 0) {
+    throw new Error('Community-map KML contains empty coordinates');
+  }
+  return tuples.map((tuple): LngLat => {
+    const [lon, lat] = tuple.split(',');
+    const x = Number(lon);
+    const y = Number(lat);
+    if (
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      x < -180 ||
+      x > 180 ||
+      y < -90 ||
+      y > 90
+    ) {
+      throw new Error(
+        `Community-map KML contains invalid coordinates: ${tuple}`,
+      );
+    }
+    return [x, y];
+  });
+}
+
+function assertDistinctPoints(
+  type: 'line' | 'polygon',
+  points: LngLat[],
+  minimum: number,
+): void {
+  const distinct = new Set(points.map(([lon, lat]) => `${lon},${lat}`));
+  if (distinct.size < minimum) {
+    throw new Error(`Community-map KML contains a degenerate ${type} geometry`);
+  }
 }
 
 function firstChildText(el: Element, tag: string): string {
@@ -79,7 +102,8 @@ function geometriesFor(pm: Element): ZoneGeometry[] {
   }
   for (const ls of Array.from(pm.getElementsByTagName('LineString'))) {
     const pts = parseCoordinates(firstChildText(ls, 'coordinates'));
-    if (pts.length >= 2) out.push({ type: 'line', points: pts });
+    assertDistinctPoints('line', pts, 2);
+    out.push({ type: 'line', points: pts });
   }
   for (const poly of Array.from(pm.getElementsByTagName('Polygon'))) {
     // Outer ring only: prefer outerBoundaryIs, else the first LinearRing.
@@ -87,7 +111,8 @@ function geometriesFor(pm: Element): ZoneGeometry[] {
     const outer = el.getElementsByTagName('outerBoundaryIs');
     const ring = outer.length ? outer[0] : el;
     const pts = parseCoordinates(firstChildText(ring, 'coordinates'));
-    if (pts.length >= 3) out.push({ type: 'polygon', points: pts });
+    assertDistinctPoints('polygon', pts, 3);
+    out.push({ type: 'polygon', points: pts });
   }
 
   return out;

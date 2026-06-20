@@ -4,14 +4,14 @@
   </div>
   <div class="flex gap-2">
     {{#if pagination.hasPrev}}
-      <a href="{{pagination.prevHref}}" class="px-3 py-1 border border-ink/15 rounded-md hover:bg-ink/5">Previous</a>
+      <a href="{{pagination.prevHref}}" class="page-link">Previous</a>
     {{else}}
-      <span class="px-3 py-1 border border-ink/10 rounded-md text-ink/30 cursor-not-allowed">Previous</span>
+      <span class="page-link-muted">Previous</span>
     {{/if}}
     {{#if pagination.hasMore}}
-      <a href="{{pagination.nextHref}}" class="px-3 py-1 border border-ink/15 rounded-md hover:bg-ink/5">Next</a>
+      <a href="{{pagination.nextHref}}" class="page-link">Next</a>
     {{else}}
-      <span class="px-3 py-1 border border-ink/10 rounded-md text-ink/30 cursor-not-allowed">Next</span>
+      <span class="page-link-muted">Next</span>
     {{/if}}
   </div>
 </div>

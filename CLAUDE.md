@@ -1,3 +1,53 @@
+# BlueBaħar backend
+
+NestJS 11 (Express) service that serves marine chart data for Maltese waters.
+TypeORM/Postgres for storage, Redis for the shared cache and BullMQ queues,
+OpenAI for zone-description enrichment, Sentry for error monitoring, and an
+Handlebars + Tailwind admin panel.
+
+## Commands
+
+- `npm run start:dev` — watch-mode dev server (needs Postgres + Redis; `make dev`
+  brings up the local docker stack).
+- `npm run build` — builds admin CSS then `nest build`.
+- `npm run lint` / `npm run typecheck` — ESLint (autofix) / `tsc --noEmit`.
+- `npm test` — Jest (`*.spec.ts` next to sources); `npm run test:e2e` for e2e.
+- `npm run datasets:refresh [-- --dataset=<key> --write]` — refresh static
+  GeoJSON layers.
+
+## Architecture
+
+- **`src/map/`** — the public Map API (`/v1/map/*`). `map.controller.ts` +
+  `map.service.ts` serve notices, metrics, the change-detection manifest, and
+  GeoJSON datasets (ETag/`304` revalidation).
+- **`src/map/community-map/`** — the daily import that is the primary notice
+  source. It fetches the curated "Malta Ranger Unit" Google My Map KML, keeps
+  only marine restriction layers, extracts facts (not prose) from each placemark,
+  rewrites the description via OpenAI, and upserts `community-map` notices.
+  Runs on boot and at 04:00 via BullMQ (`*.scheduler.ts` → `*.processor.ts` →
+  `*.service.ts`).
+- **`src/map/datasets.ts` + `dataset-catalog/refresh.service.ts`** — static
+  committed `data/datasets/*.geojson` reference layers; some refresh daily
+  in-memory, the seed file is never mutated.
+- **`src/admin/`** — browser-only admin panel under `/admin` (JWT cookie minted
+  from `ADMIN_API_KEY`). Views in `views/`, assets in `public/`.
+- **`src/config.schema.ts`** — Zod-validated env; boot aborts on missing/invalid
+  config. Add new env vars here.
+- **`src/instrument.ts`** — Sentry init, imported first in `main.ts`; no-op
+  without `SENTRY_DSN`.
+
+## Conventions & gotchas
+
+- Postgres schema is auto-synced from entities (`synchronize: true`). Breaking
+  entity changes need a manual volume wipe (`docker compose down -v`).
+- `OPENAI_API_KEY` is **required** — the community-map import has no key-free
+  path. Enrich model resolves `ENRICH_MODEL` → `OPENAI_MODEL` → `gpt-5.5`.
+- The community map's placemark prose is **never persisted**; only extracted
+  facts plus the LLM rewrite are stored. Preserve that guarantee.
+- Exception-filter order in `app.module.ts` is load-bearing (Nest reverses the
+  provider list); don't reorder without re-reading the comment there.
+- Keep README.md and `.env.example` in sync when changing config or routes.
+
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands
 

@@ -6,40 +6,43 @@
 <body class="bg-paper text-ink">
   <div class="min-h-screen flex">
     {{> admin-sidebar}}
-    <main class="flex-1 p-6 md:p-10">
-      <header class="mb-6 flex items-end justify-between gap-4 flex-wrap">
+    <main class="admin-main">
+      <header class="page-header">
         <div>
-          <h1 class="text-2xl font-display font-semibold">{{title}}</h1>
-          <p class="text-sm text-ink/60 mt-1">Scraping and ingestion activity, newest first.</p>
+          <h1 class="page-title">{{title}}</h1>
+          <p class="page-subtitle">Scraping and ingestion activity, newest first.</p>
         </div>
-        <form method="get" class="flex items-center gap-2 text-sm">
+        <form method="get" class="filter-form">
           <label for="logType" class="text-ink/60">Type</label>
-          <select name="logType" id="logType" class="border border-ink/15 rounded-md px-2 py-1 bg-white">
+          <select name="logType" id="logType" class="field-input-sm bg-white">
             <option value="">All</option>
             {{#each logTypes}}
               <option value="{{this}}" {{#if (eq this ../selectedLogType)}}selected{{/if}}>{{this}}</option>
             {{/each}}
           </select>
-          <button type="submit" class="px-3 py-1 bg-ink text-white rounded-md hover:opacity-90">Filter</button>
+          <button type="submit" class="btn btn-primary px-3 py-1">Filter</button>
         </form>
       </header>
 
       {{#if logs.length}}
-        <div class="overflow-x-auto border border-ink/10 rounded-xl bg-white">
-          <table class="min-w-full text-sm">
-            <thead class="text-left text-xs uppercase tracking-wider text-ink/55 border-b border-ink/10">
+        <div class="table-wrap">
+          <table class="min-w-full text-sm cards-sm">
+            <thead class="table-head">
               <tr>
                 <th class="px-4 py-3 w-44">When</th>
                 <th class="px-4 py-3 w-48">Type</th>
                 <th class="px-4 py-3">Description</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-ink/5">
+            <tbody class="table-body">
               {{#each logs}}
                 <tr>
-                  <td class="px-4 py-3 align-top text-xs text-ink/70 whitespace-nowrap">{{formatDate this.createdAt}}</td>
-                  <td class="px-4 py-3 align-top"><span class="text-[11px] uppercase tracking-wider bg-ink/5 rounded px-2 py-0.5">{{this.logType}}</span></td>
-                  <td class="px-4 py-3 align-top text-sm">{{this.description}}</td>
+                  <td class="px-4 py-3 align-top text-xs text-ink/70 w-44" data-label="When">
+                    <div class="whitespace-nowrap">{{formatDate this.createdAt}}</div>
+                    <div class="text-ink/40">{{formatRelative this.createdAt}}</div>
+                  </td>
+                  <td class="px-4 py-3 align-top" data-label="Type"><span class="badge">{{this.logType}}</span></td>
+                  <td class="px-4 py-3 align-top text-sm" data-label="Description">{{this.description}}</td>
                 </tr>
               {{/each}}
             </tbody>
@@ -47,7 +50,7 @@
         </div>
         {{> admin-pagination}}
       {{else}}
-        <div class="border border-ink/10 rounded-xl bg-white p-10 text-center text-ink/60">
+        <div class="empty-state">
           No log entries.
         </div>
       {{/if}}

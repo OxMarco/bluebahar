@@ -32,6 +32,12 @@ export class NoticeToMariners {
   @Column({ type: 'enum', enum: NoticeKind })
   kind!: NoticeKind;
 
+  // Restriction class, finer-grained than `kind`. Community-map rows carry their
+  // source layer key ('swimmer-zones', 'wreck-conservation', …) so the app can
+  // icon/colour/filter by type; null for admin-authored notices that name none.
+  @Column({ nullable: true })
+  category?: string;
+
   @Column()
   title!: string;
 
@@ -42,6 +48,16 @@ export class NoticeToMariners {
 
   @Column()
   source!: string;
+
+  // Provenance for the notice (facts/links, not the source's prose). noticeRef
+  // is the establishing reference, e.g. "Notice to Mariners 09 & 10 of 2023";
+  // sourceUrl deep-links to the authoritative notice (Transport Malta PDF,
+  // legislation.mt, …). Null when the source states neither.
+  @Column({ nullable: true })
+  noticeRef?: string;
+
+  @Column({ nullable: true })
+  sourceUrl?: string;
 
   // Stable source-specific identity. Community-map rows derive this from the
   // layer and normalized zone name; unique together with source for idempotent
