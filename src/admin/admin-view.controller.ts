@@ -40,8 +40,8 @@ import { ViewFlaggedDto } from './dto/view-flagged.dto';
 import { ViewReportsDto } from './dto/view-reports.dto';
 import { ReviewNoticesDto } from './dto/review-notices.dto';
 import { Paginated } from '../common/dto/paginated.dto';
-import { LogType } from '../scraper/log-type';
-import { NoticeKind } from '../scraper/notice-kind';
+import { LogType } from '../common/log-type';
+import { NoticeKind } from '../map/notice-kind';
 
 @Catch()
 class AdminCreateNoticeExceptionFilter implements ExceptionFilter {
@@ -266,6 +266,22 @@ export class AdminViewController {
       logTypes: Object.values(LogType),
       selectedLogType: query.logType ?? '',
       pagination: paginationMeta(page, query),
+    };
+  }
+
+  @Get('zones')
+  @UseGuards(AdminJwtGuard)
+  @Render('admin/zones')
+  async zonesPage() {
+    const { featureCollection, total, communityCount } =
+      await this.adminService.viewAllZones();
+    return {
+      page: 'zones',
+      title: 'Zone map',
+      featureCollection,
+      total,
+      communityCount,
+      otherCount: total - communityCount,
     };
   }
 

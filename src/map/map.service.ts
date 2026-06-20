@@ -4,9 +4,9 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { IsNull, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { createHash } from 'node:crypto';
-import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
+import { NoticeToMariners } from './entities/notice-to-mariners.entity';
 import { UserReport } from './entities/user-report.entity';
-import { NoticeKind } from '../scraper/notice-kind';
+import { NoticeKind } from './notice-kind';
 import { CacheManifestDto } from './dto/cache-manifest.dto';
 import { CreateReportDto } from './dto/create-report.dto';
 import { GetNoticesDto } from './dto/get-notices.dto';
@@ -47,7 +47,9 @@ export class MapService {
 
     const entities = await this.noticeRepository.find({
       where,
-      order: { activeFrom: 'DESC' },
+      // Community-map rows commonly share activeFrom, so id is the stable
+      // tie-breaker that makes offset pages non-overlapping and repeatable.
+      order: { activeFrom: 'DESC', id: 'ASC' },
       take: query.limit + 1,
       skip: query.offset,
     });
@@ -95,17 +97,23 @@ export class MapService {
       NoticeKind,
       { publicCount: number; needsReviewCount: number }
     >();
+    let publicCount = 0;
+    let needsReviewCount = 0;
     for (const row of kindRows) {
       const entry = byKind.get(row.kind) ?? {
         publicCount: 0,
         needsReviewCount: 0,
       };
-      if (row.needsReview) entry.needsReviewCount += Number(row.count);
-      else entry.publicCount += Number(row.count);
+      const count = Number(row.count);
+      if (row.needsReview) {
+        entry.needsReviewCount += count;
+        needsReviewCount += count;
+      } else {
+        entry.publicCount += count;
+        publicCount += count;
+      }
       byKind.set(row.kind, entry);
     }
-    const publicCount = sumBy(kindRows, (r) => !r.needsReview);
-    const needsReviewCount = sumBy(kindRows, (r) => r.needsReview);
 
     return {
       asOf: now.toISOString(),

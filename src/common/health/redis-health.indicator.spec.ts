@@ -2,8 +2,10 @@ import {
   HealthIndicatorService,
   type HealthIndicatorResult,
 } from '@nestjs/terminus';
-import type { Queue } from 'bullmq';
-import { RedisHealthIndicator } from './redis-health.indicator';
+import {
+  RedisHealthIndicator,
+  type RedisHealthClient,
+} from './redis-health.indicator';
 
 type SessionMock = {
   up: jest.Mock<HealthIndicatorResult, [Record<string, unknown>?]>;
@@ -12,7 +14,7 @@ type SessionMock = {
 
 function buildIndicator(opts: {
   ping: jest.Mock<Promise<string>, []>;
-  clientRejects?: Error;
+  connectRejects?: Error;
 }) {
   const session: SessionMock = {
     up: jest
@@ -30,14 +32,20 @@ function buildIndicator(opts: {
     check: jest.fn().mockReturnValue(session),
   } as unknown as HealthIndicatorService;
 
-  const queue = {
-    client: opts.clientRejects
-      ? Promise.reject(opts.clientRejects)
-      : Promise.resolve({ ping: opts.ping }),
-  } as unknown as Queue;
+  const client = {
+    isOpen: false,
+    connect: opts.connectRejects
+      ? jest.fn().mockRejectedValue(opts.connectRejects)
+      : jest.fn().mockImplementation(function (this: { isOpen: boolean }) {
+          this.isOpen = true;
+          return Promise.resolve();
+        }),
+    ping: opts.ping,
+    close: jest.fn().mockResolvedValue(undefined),
+  } as unknown as RedisHealthClient;
 
   return {
-    indicator: new RedisHealthIndicator(healthIndicatorService, queue),
+    indicator: new RedisHealthIndicator(healthIndicatorService, client),
     session,
   };
 }
@@ -69,7 +77,7 @@ describe('RedisHealthIndicator', () => {
   it('reports down when the client connection rejects', async () => {
     const { indicator, session } = buildIndicator({
       ping: jest.fn<Promise<string>, []>(),
-      clientRejects: new Error('ECONNREFUSED'),
+      connectRejects: new Error('ECONNREFUSED'),
     });
 
     await expect(indicator.pingCheck('redis')).resolves.toEqual({

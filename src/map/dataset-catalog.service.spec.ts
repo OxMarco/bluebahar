@@ -107,4 +107,44 @@ describe('DatasetCatalogService', () => {
       NotFoundException,
     );
   });
+
+  it('keeps the last good dataset when a valid refresh is sharply truncated', () => {
+    const definition = DATASETS.find((dataset) => dataset.key === 'beaches');
+    if (!definition) throw new Error('Expected beaches definition');
+    const before = service.requireEntry(definition.key);
+
+    expect(() => service.refreshEntry(definition, beachPayload(10))).toThrow(
+      'minimum safe count',
+    );
+    expect(service.requireEntry(definition.key)).toBe(before);
+  });
+
+  it('accepts a refresh that satisfies absolute and retention thresholds', () => {
+    const definition = DATASETS.find((dataset) => dataset.key === 'beaches');
+    if (!definition) throw new Error('Expected beaches definition');
+
+    const metadata = service.refreshEntry(definition, beachPayload(80));
+
+    expect(metadata.featureCount).toBe(80);
+    expect(service.requireEntry(definition.key).metadata.sha256).toBe(
+      metadata.sha256,
+    );
+  });
 });
+
+function beachPayload(count: number): string {
+  return JSON.stringify({
+    type: 'FeatureCollection',
+    features: Array.from({ length: count }, (_, index) => ({
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: [14.4 + index * 0.0001, 35.9],
+      },
+      properties: {
+        Site_Code: `TEST-${index}`,
+        Name_ENG: `Test beach ${index}`,
+      },
+    })),
+  });
+}

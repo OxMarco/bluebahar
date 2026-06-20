@@ -1,11 +1,11 @@
 import { NotFoundException } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 import { AdminService } from './admin.service';
-import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
+import { NoticeToMariners } from '../map/entities/notice-to-mariners.entity';
 import { UserReport } from '../map/entities/user-report.entity';
-import { Logs } from '../scraper/entities/logs.entity';
-import { LogType } from '../scraper/log-type';
-import { NoticeKind } from '../scraper/notice-kind';
+import { Logs } from '../common/entities/logs.entity';
+import { LogType } from '../common/log-type';
+import { NoticeKind } from '../map/notice-kind';
 import { MapService } from '../map/map.service';
 import type { CreateNoticeDto } from './dto/create-notice.dto';
 
@@ -116,7 +116,7 @@ describe('AdminService', () => {
       logsFind.mockResolvedValue([{} as Logs, {} as Logs]);
 
       const result = await service.viewLogs({
-        logType: LogType.SCRAPING_JOB,
+        logType: LogType.IMPORT_JOB,
         since,
         limit: 1,
         offset: 0,
@@ -137,7 +137,7 @@ describe('AdminService', () => {
         }),
       );
       expect(options?.where).toEqual(
-        expect.objectContaining({ logType: LogType.SCRAPING_JOB }),
+        expect.objectContaining({ logType: LogType.IMPORT_JOB }),
       );
       expect(options?.where).toHaveProperty('createdAt');
     });

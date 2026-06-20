@@ -1,5 +1,5 @@
-import { NoticeKind } from '../scraper/notice-kind';
-import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
+import { NoticeKind } from './notice-kind';
+import { NoticeToMariners } from './entities/notice-to-mariners.entity';
 import { toNoticeDto } from './notice-serializer';
 
 type NoticeArea = NoticeToMariners['areas'][number];

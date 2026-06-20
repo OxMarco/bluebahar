@@ -1,13 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MoreThanOrEqual, Repository } from 'typeorm';
-import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
+import { NoticeToMariners } from '../map/entities/notice-to-mariners.entity';
 import { UserReport } from '../map/entities/user-report.entity';
-import { Logs } from '../scraper/entities/logs.entity';
-import { LogType } from '../scraper/log-type';
+import { Logs } from '../common/entities/logs.entity';
+import { LogType } from '../common/log-type';
 import { MapService } from '../map/map.service';
 import { GetNoticesDto } from '../map/dto/get-notices.dto';
 import { toNoticeDto } from '../map/notice-serializer';
+import { COMMUNITY_MAP_SOURCE } from '../map/community-map/layers.config';
 import { CreateNoticeDto } from './dto/create-notice.dto';
 import { ViewLogsDto } from './dto/view-logs.dto';
 import { ViewFlaggedDto } from './dto/view-flagged.dto';
@@ -62,6 +63,57 @@ export class AdminService {
 
   async viewNoticesInReview(query: GetNoticesDto) {
     return this.mapService.getNotices(query, true);
+  }
+
+  // Every notice that carries geometry, flattened into one GeoJSON
+  // FeatureCollection for the admin zone map. Each feature is tagged with its
+  // notice's identity + provenance (community-map vs other) and review state so the
+  // map can colour them. Unbounded by design — the whole set fits one screen and
+  // the admin wants to see all of it at once.
+  async viewAllZones(): Promise<{
+    featureCollection: {
+      type: 'FeatureCollection';
+      features: unknown[];
+    };
+    total: number;
+    communityCount: number;
+  }> {
+    const notices = await this.noticeRepository.find({
+      order: { kind: 'ASC', activeFrom: 'DESC' },
+    });
+
+    const features: unknown[] = [];
+    let total = 0;
+    let communityCount = 0;
+    for (const notice of notices) {
+      const dto = toNoticeDto(notice);
+      if (!dto.geometry) continue; // text-only notice — nothing to draw
+      total += 1;
+      const community = notice.source === COMMUNITY_MAP_SOURCE;
+      if (community) communityCount += 1;
+      for (const feature of dto.geometry.features) {
+        features.push({
+          type: 'Feature',
+          geometry: feature.geometry,
+          properties: {
+            noticeId: dto.id,
+            title: dto.title,
+            kind: dto.kind,
+            source: dto.source,
+            community,
+            needsReview: notice.needsReview,
+            activeFrom: dto.activeFrom,
+            activeTo: dto.activeTo,
+          },
+        });
+      }
+    }
+
+    return {
+      featureCollection: { type: 'FeatureCollection', features },
+      total,
+      communityCount,
+    };
   }
 
   // Crowd-sourced reports for the admin queue. Defaults to open (unresolved)

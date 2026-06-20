@@ -33,23 +33,12 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required}
-      # AI-vision cross-check of extracted geometry against the notice's chart
-      # pages; mismatches go to the review queue. Set to "false" to disable.
-      VISION_VERIFY: ${VISION_VERIFY:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY required}
-      NOTICE_SCRAPE_BATCH_SIZE: ${NOTICE_SCRAPE_BATCH_SIZE:?NOTICE_SCRAPE_BATCH_SIZE required}
-      # Route Transport Malta scraper egress through the WARP sidecar — their
-      # Cloudflare WAF 403s our datacenter IP. socks5h:// (remote DNS) is
-      # required; socks5:// leaks to IPv6 and fails. Override in .env to point
-      # at a residential proxy instead.
-      SCRAPER_PROXY_URL: ${SCRAPER_PROXY_URL:-socks5h://warp:1080}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      warp:
         condition: service_healthy
     healthcheck:
       test:
@@ -139,67 +128,9 @@ services:
     networks:
       - backend
 
-  # Cloudflare WARP in proxy mode — exposes a SOCKS5 proxy on :1080 whose
-  # egress is a Cloudflare WARP IP. Used only by the app's Transport Malta
-  # scraper (SCRAPER_PROXY_URL) to get past their datacenter-IP WAF block.
-  # Not published to the host; reachable only on the backend network.
-  warp:
-    image: caomingjun/warp
-    restart: unless-stopped
-    expose:
-      - '1080'
-    cap_add:
-      - NET_ADMIN
-      - MKNOD
-      - AUDIT_WRITE
-    sysctls:
-      net.ipv4.conf.all.src_valid_mark: 1
-    volumes:
-      - warp_data:/var/lib/cloudflare-warp
-    healthcheck:
-      test:
-        [
-          'CMD-SHELL',
-          'curl -fs https://www.cloudflare.com/cdn-cgi/trace | grep -q "warp=on"',
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
-    # warp-svc (the tunnel daemon) outgrows 128m and an OOM-kill of just that
-    # child leaves the SOCKS listener up but the tunnel dead — looks "running"
-    # but every scrape fails DNS. 256m gives it headroom.
-    mem_limit: 256m
-    cpus: 0.5
-    logging: *default-logging
-    networks:
-      - backend
-    # Docker does NOT restart an unhealthy container — only a fully-exited one.
-    # When the WARP daemon dies behind a still-listening proxy, the container
-    # stays "up (unhealthy)" forever. autoheal watches this label and restarts it.
-    labels:
-      - 'autoheal=true'
-
-  # Restarts any container that goes (and stays) unhealthy — covers the warp
-  # sidecar's "proxy up, tunnel dead" failure mode that restart:unless-stopped
-  # can't catch. Talks to the Docker socket; no app network access needed.
-  autoheal:
-    image: willfarrell/autoheal
-    restart: unless-stopped
-    environment:
-      AUTOHEAL_CONTAINER_LABEL: autoheal
-      AUTOHEAL_INTERVAL: 30
-      AUTOHEAL_START_PERIOD: 60
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    mem_limit: 64m
-    cpus: 0.25
-    logging: *default-logging
-
 volumes:
   pgdata:
   traefik_letsencrypt:
-  warp_data:
 
 networks:
   backend:

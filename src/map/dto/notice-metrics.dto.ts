@@ -1,4 +1,4 @@
-import { NoticeKind } from '../../scraper/notice-kind';
+import { NoticeKind } from '../notice-kind';
 
 export class NoticeKindMetricsDto {
   kind!: NoticeKind;

@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validateSync, ValidationError } from 'class-validator';
 import { CreateNoticeDto } from './create-notice.dto';
-import { NoticeKind } from '../../scraper/notice-kind';
+import { NoticeKind } from '../../map/notice-kind';
 
 function messagesOf(errors: ValidationError[]): string[] {
   const walk = (e: ValidationError): string[] => [

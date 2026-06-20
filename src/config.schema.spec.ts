@@ -16,7 +16,6 @@ const validEnv = {
   ADMIN_SESSION_TTL_SECONDS: 3600,
   THROTTLE_TTL_MS: 60_000,
   THROTTLE_LIMIT: 120,
-  NOTICE_SCRAPE_BATCH_SIZE: 10,
   SENTRY_DSN: 'https://public@example.com/1',
   SENTRY_TRACES_SAMPLE_RATE: 0.1,
   SENTRY_PROFILES_SAMPLE_RATE: 0.05,
@@ -34,22 +33,28 @@ describe('configSchema', () => {
     expect(configSchema.safeParse(validEnv).success).toBe(true);
   });
 
+  it('treats blank optional map and AI values as unset', () => {
+    const result = configSchema.safeParse({
+      ...validEnv,
+      OPENAI_API_KEY: '',
+      OPENAI_MODEL: '',
+      ENRICH_MODEL: '',
+      COMMUNITY_MAP_MID: '',
+    });
+    expect(result.success).toBe(true);
+  });
+
   it('requires infrastructure and application secrets', () => {
     const incomplete: Record<string, unknown> = { ...validEnv };
     delete incomplete.DB_PASSWORD;
-    delete incomplete.OPENAI_API_KEY;
     delete incomplete.ADMIN_API_KEY;
 
     expect(errorPaths(incomplete)).toEqual(
-      expect.arrayContaining([
-        'DB_PASSWORD',
-        'OPENAI_API_KEY',
-        'ADMIN_API_KEY',
-      ]),
+      expect.arrayContaining(['DB_PASSWORD', 'ADMIN_API_KEY']),
     );
   });
 
-  it('rejects invalid ports, batch sizes, and sample rates', () => {
+  it('rejects invalid ports, throttling values, and sample rates', () => {
     expect(
       errorPaths({
         ...validEnv,
@@ -57,7 +62,6 @@ describe('configSchema', () => {
         PORT: 70_001,
         THROTTLE_TTL_MS: 0,
         THROTTLE_LIMIT: 0,
-        NOTICE_SCRAPE_BATCH_SIZE: 0,
         SENTRY_TRACES_SAMPLE_RATE: 1.5,
       }),
     ).toEqual(
@@ -66,7 +70,6 @@ describe('configSchema', () => {
         'PORT',
         'THROTTLE_TTL_MS',
         'THROTTLE_LIMIT',
-        'NOTICE_SCRAPE_BATCH_SIZE',
         'SENTRY_TRACES_SAMPLE_RATE',
       ]),
     );

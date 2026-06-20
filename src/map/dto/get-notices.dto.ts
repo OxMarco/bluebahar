@@ -1,6 +1,6 @@
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
-import { NoticeKind } from '../../scraper/notice-kind';
+import { NoticeKind } from '../notice-kind';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 
 export class GetNoticesDto extends PaginationQueryDto {

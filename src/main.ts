@@ -92,7 +92,9 @@ async function bootstrap() {
     helmet.contentSecurityPolicy({
       useDefaults: true,
       directives: {
-        'script-src': ["'self'", 'https://unpkg.com'],
+        // 'unsafe-eval' is required by Alpine.js, which compiles x-data and
+        // directive expressions via the Function constructor.
+        'script-src': ["'self'", 'https://unpkg.com', "'unsafe-eval'"],
         'script-src-elem': ["'self'", 'https://unpkg.com'],
         'style-src': ["'self'", 'https://unpkg.com'],
         'style-src-elem': ["'self'", 'https://unpkg.com'],

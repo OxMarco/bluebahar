@@ -8,6 +8,9 @@ COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY src ./src
 COPY views ./views
 COPY public ./public
+# Tailwind input for the admin stylesheet; `npm run build` regenerates
+# public/admin.css from it. Dev-only — the runtime stage never sees it.
+COPY tailwind ./tailwind
 RUN npm run build
 
 FROM ${NODE_IMAGE} AS runtime

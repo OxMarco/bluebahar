@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsDate, IsEnum, IsOptional } from 'class-validator';
-import { LogType } from '../../scraper/log-type';
+import { LogType } from '../../common/log-type';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 
 export class ViewLogsDto extends PaginationQueryDto {

@@ -1,4 +1,4 @@
-import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
+import { NoticeToMariners } from './entities/notice-to-mariners.entity';
 import {
   NoticeDto,
   NoticeGeometry,
@@ -10,10 +10,10 @@ import {
 } from './dto/notice.dto';
 import {
   boundingCircle,
-  closeRing,
   isFinitePoint,
   representativePoints,
 } from './notice-geometry';
+import { closeRing } from './geo-ring';
 
 type EntityGeometryPart = NoticeToMariners['areas'][number];
 

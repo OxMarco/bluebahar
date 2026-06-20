@@ -7,16 +7,19 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bullmq';
 import { TerminusModule } from '@nestjs/terminus';
 import { CacheModule } from '@nestjs/cache-manager';
-import { createKeyv } from '@keyv/redis';
+import { createClient, createKeyv } from '@keyv/redis';
 import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { validateConfig } from './config.schema';
-import { ScraperModule } from './scraper/scraper.module';
 import { MapModule } from './map/map.module';
 import { AppController } from './app.controller';
-import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
+import { HttpHealthIndicator } from './common/health/http-health.indicator';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 import { TypeOrmNotFoundExceptionFilter } from './common/filters/entity-not-found.filter';
 import { AdminModule } from './admin/admin.module';
+import {
+  REDIS_HEALTH_CLIENT,
+  RedisHealthIndicator,
+} from './common/health/redis-health.indicator';
 
 @Module({
   controllers: [AppController],
@@ -36,6 +39,16 @@ import { AdminModule } from './admin/admin.module';
       inject: [ConfigService],
     }),
     ScheduleModule.forRoot(),
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        connection: {
+          host: configService.getOrThrow<string>('REDIS_HOST'),
+          port: configService.getOrThrow<number>('REDIS_PORT'),
+        },
+      }),
+      inject: [ConfigService],
+    }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
@@ -53,19 +66,9 @@ import { AdminModule } from './admin/admin.module';
       }),
       inject: [ConfigService],
     }),
-    BullModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        connection: {
-          host: configService.getOrThrow<string>('REDIS_HOST'),
-          port: configService.getOrThrow<number>('REDIS_PORT'),
-        },
-      }),
-      inject: [ConfigService],
-    }),
     // Global cache backed by the same Redis we already run, so the TTL'd entries
     // are shared across instances rather than per-process. Namespaced to keep
-    // its keys clear of the BullMQ queue data sharing the Redis db.
+    // its keys clear of the application data sharing the Redis instance.
     CacheModule.registerAsync({
       isGlobal: true,
       imports: [ConfigModule],
@@ -84,7 +87,6 @@ import { AdminModule } from './admin/admin.module';
     }),
     TerminusModule.forRoot(),
     SentryModule.forRoot(),
-    ScraperModule,
     MapModule,
     AdminModule,
   ],
@@ -98,7 +100,21 @@ import { AdminModule } from './admin/admin.module';
     { provide: APP_FILTER, useClass: ApiExceptionFilter },
     { provide: APP_FILTER, useClass: TypeOrmNotFoundExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
-    ImpitHealthIndicator,
+    HttpHealthIndicator,
+    RedisHealthIndicator,
+    {
+      provide: REDIS_HEALTH_CLIENT,
+      useFactory: (configService: ConfigService) => {
+        const host = configService.getOrThrow<string>('REDIS_HOST');
+        const port = configService.getOrThrow<number>('REDIS_PORT');
+        const client = createClient({ url: `redis://${host}:${port}` });
+        // pingCheck reports connection failures. The listener prevents the
+        // Redis client's required error event from becoming unhandled.
+        client.on('error', () => undefined);
+        return client;
+      },
+      inject: [ConfigService],
+    },
   ],
 })
 export class AppModule {}

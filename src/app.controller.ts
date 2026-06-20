@@ -6,22 +6,13 @@ import {
   MemoryHealthIndicator,
   TypeOrmHealthIndicator,
 } from '@nestjs/terminus';
-import { SOURCES as NOTICE_SOURCES } from './scraper/parser/notice-to-mariners';
-import { ImpitHealthIndicator } from './common/health/impit-health.indicator';
+import { HttpHealthIndicator } from './common/health/http-health.indicator';
 import { RedisHealthIndicator } from './common/health/redis-health.indicator';
 import { DatasetCatalogService } from './map/dataset-catalog.service';
+import { DEFAULT_COMMUNITY_MAP_MID } from './map/community-map/community-map-import.service';
+import { communityMapKmlUrl } from './map/community-map/kml-source';
 
-const SCRAPER_PING_URLS = (() => {
-  const seenOrigin = new Set<string>();
-  const urls: string[] = [];
-  for (const url of NOTICE_SOURCES) {
-    const origin = new URL(url).origin;
-    if (seenOrigin.has(origin)) continue;
-    seenOrigin.add(origin);
-    urls.push(url);
-  }
-  return urls;
-})();
+const MAP_SOURCE_URL = communityMapKmlUrl(DEFAULT_COMMUNITY_MAP_MID);
 
 @Controller('/')
 export class AppController {
@@ -29,7 +20,7 @@ export class AppController {
     private readonly health: HealthCheckService,
     private readonly memory: MemoryHealthIndicator,
     private readonly db: TypeOrmHealthIndicator,
-    private readonly http: ImpitHealthIndicator,
+    private readonly http: HttpHealthIndicator,
     private readonly disk: DiskHealthIndicator,
     private readonly redis: RedisHealthIndicator,
     private readonly datasets: DatasetCatalogService,
@@ -103,9 +94,7 @@ export class AppController {
       () => this.db.pingCheck('database'),
       () => this.redis.pingCheck('redis'),
       () => this.datasets.healthCheck(),
-      ...SCRAPER_PING_URLS.map(
-        (url) => () => this.http.pingCheck(new URL(url).hostname, url),
-      ),
+      () => this.http.pingCheck('google-my-maps', MAP_SOURCE_URL),
       () =>
         this.disk.checkStorage('storage', {
           path: '/',

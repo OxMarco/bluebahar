@@ -4,6 +4,10 @@ import { z } from 'zod';
 // field coerces. Ports share one schema. Unknown keys are preserved by
 // validateConfig so the rest of process.env stays visible to ConfigService.
 const port = z.coerce.number().int().min(0).max(65535);
+const optionalString = z.preprocess(
+  (value) => (value === '' || value === undefined ? undefined : value),
+  z.string().min(1).optional(),
+);
 
 export const configSchema = z.object({
   // Database configuration
@@ -19,7 +23,7 @@ export const configSchema = z.object({
     .default('development'),
   PORT: port.default(3000),
 
-  // Queue configuration
+  // Shared cache configuration
   REDIS_HOST: z.string().min(1),
   REDIS_PORT: port,
 
@@ -29,43 +33,32 @@ export const configSchema = z.object({
   MAP_CACHE_TTL_MS: z.coerce.number().int().positive().default(30_000),
 
   // OpenAI
-  OPENAI_API_KEY: z.string().min(1),
+  OPENAI_API_KEY: optionalString,
 
-  // Model for the notice enrichment call (ENRICH_MODEL wins over the generic
-  // OPENAI_MODEL; enrich.ts hardcodes the final fallback). Validated here so a
-  // typo'd var name or empty value fails at boot instead of surfacing as
-  // per-job enrichment failures.
-  ENRICH_MODEL: z.string().min(1).optional(),
-  OPENAI_MODEL: z.string().min(1).optional(),
+  // Model for community-map zone descriptions. ENRICH_MODEL wins over the
+  // generic OPENAI_MODEL; the map importer has a final default.
+  ENRICH_MODEL: optionalString,
+  OPENAI_MODEL: optionalString,
 
-  // Vision cross-check of extracted geometry against the notice's own chart
-  // pages (vision-verify.ts). Costs one image-bearing model call per geometry
-  // notice; a mismatch flags the record for manual review, nothing more.
-  // String enum rather than coerce.boolean: Boolean('false') is true.
-  VISION_VERIFY: z.preprocess(
+  // Community "Malta Ranger Unit" My Map id. The daily import (CommunityMapImport
+  // Service) pulls this map's marine layers as the authoritative source of zone
+  // geometry + classification. Optional — the service hardcodes the known id as
+  // the default; override to point a fork/staging run at a different map.
+  COMMUNITY_MAP_MID: optionalString,
+  // Toggle the community-map import. Defaults true. String enum rather than
+  // coerce.boolean: Boolean('false') is true.
+  COMMUNITY_MAP_IMPORT_ENABLED: z.preprocess(
     (v) => (v === '' || v === undefined ? 'true' : v),
     z.enum(['true', 'false']).transform((v) => v === 'true'),
   ),
-  // Model for the vision call (must be multimodal). Falls back to the
-  // enrichment model chain when unset.
-  VISION_MODEL: z.string().min(1).optional(),
-
-  // When a notice's geometry came from the generic catch-all extractor (which
-  // normally forces manual review) AND the vision cross-check returned 'match',
-  // treat the vision pass as the verification the review queue exists for and
-  // publish without a human. Off by default: it lets vision-trusted geometry
-  // reach mariners unreviewed, so enable it in prod only once VISION_VERIFY's
-  // match verdicts are trusted. Mismatch/unverifiable/failed still flag.
-  // String enum rather than coerce.boolean: Boolean('false') is true.
-  VISION_AUTOCLEAR_GEOMETRY: z.preprocess(
-    (v) => (v === '' || v === undefined ? 'false' : v),
+  // Generate each zone's description with the LLM. Defaults true. Set false for
+  // local/offline runs: the import then uses the self-authored restriction brief
+  // (still original text, never the map's copyrighted prose) — instant, no key,
+  // no per-zone billing. String enum rather than coerce.boolean.
+  COMMUNITY_MAP_DESCRIBE_WITH_AI: z.preprocess(
+    (v) => (v === '' || v === undefined ? 'true' : v),
     z.enum(['true', 'false']).transform((v) => v === 'true'),
   ),
-
-  // Outbound proxy for the Transport Malta scrape (http.ts reads it at import
-  // time). Optional — but validated so an empty value fails loudly rather than
-  // silently disabling the proxy and getting the scraper 403'd.
-  SCRAPER_PROXY_URL: z.string().min(1).optional(),
 
   // Pre-shared admin secret. The user types this into the /admin/login form;
   // the controller constant-time compares it to mint a session JWT. Min length
@@ -88,9 +81,6 @@ export const configSchema = z.object({
   // Public API throttling window and request limit
   THROTTLE_TTL_MS: z.coerce.number().int().positive().default(60_000),
   THROTTLE_LIMIT: z.coerce.number().int().positive().default(120),
-
-  // Max number of notice-to-mariners PDFs to enqueue per cron iteration
-  NOTICE_SCRAPE_BATCH_SIZE: z.coerce.number().int().positive(),
 
   // Sentry
   SENTRY_DSN: z.url().optional(),

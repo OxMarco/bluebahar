@@ -32,6 +32,10 @@ export interface DatasetDefinition {
   // The committed data/datasets/{key}.geojson stays as the boot-time seed and
   // upstream-down fallback. Omit for the hand-refreshed multi-year layers.
   refresh?: 'daily';
+  // Safety rails for live refreshes. Both are checked against the normalized
+  // candidate before it replaces the last-known-good in-memory entry.
+  minRefreshFeatureCount?: number;
+  minRefreshRetentionRatio?: number;
   // Extra request headers for the refresh fetch. The ArcGIS `usrsvcs` proxy,
   // for one, 403s every request that doesn't carry a Referer matching its
   // host dashboard — so the header is mandatory, not optional politeness.
@@ -56,13 +60,10 @@ export const DATASETS: DatasetDefinition[] = [
     sourceUrl:
       'https://ows.emodnet-bathymetry.eu/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=emodnet%3Acontours&outputFormat=application%2Fjson&bbox=13.669821,35.369532,15.089278,36.499613,EPSG%3A4326',
   },
-  {
-    key: 'conservation-area-around-wrecks',
-    name: 'Conservation area around wrecks',
-    kind: 'context',
-    sourceUrl:
-      'https://haleconnect.com/ows/services/org.1261.1ea70633-7954-4a2c-86e5-f639bb2bf3bd_wfs?REQUEST=GetFeature&SERVICE=WFS&VERSION=2.0.0&TYPENAMES=am%3AManagementRestrictionOrRegulationZone&count=1',
-  },
+  // NOTE: 'conservation-area-around-wrecks' was removed — the community map's
+  // "Conservation Areas around Wrecks" layer (NtM 113/2024) supersedes it with
+  // hand-curated polygons, ingested as community-map notices (see community-map/). The WFS
+  // version produced only coarse line geometry.
   {
     key: 'anchoring-and-mooring-hotspots',
     name: 'Anchoring and Mooring Hotspots',
@@ -98,6 +99,8 @@ export const DATASETS: DatasetDefinition[] = [
     name: 'Beaches',
     kind: 'interactive',
     refresh: 'daily',
+    minRefreshFeatureCount: 80,
+    minRefreshRetentionRatio: 0.75,
     sourceUrl:
       'https://utility.arcgis.com/usrsvcs/servers/2ca76f1379594c85bca17d5ff3600721/rest/services/EHD_BathingSites_PublicView_/FeatureServer/0/query?where=1%3D1&outFields=*&outSR=4326&f=geojson',
     // The proxy 403s without a Referer matching its host dashboard app.

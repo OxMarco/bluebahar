@@ -23,6 +23,7 @@ import {
 } from './datasets';
 import { ADAPTERS } from './normalize/adapters';
 import type { NormalizedFeatureProperties } from './normalize/normalized-feature';
+import { isRingClosed } from './geo-ring';
 
 // GeoJSON files are committed to the repo and shipped with the deploy artifact;
 // resolved from process.cwd() since both `npm start` and the Dockerfile's
@@ -202,6 +203,19 @@ export class DatasetCatalogService implements OnModuleInit {
   // the new metadata so the caller can log what changed.
   refreshEntry(def: DatasetDefinition, raw: string): DatasetMetadata {
     const entry = this.buildEntry(def, raw);
+    const previousCount = this.entries.get(def.key)?.metadata.featureCount;
+    const absoluteMinimum = def.minRefreshFeatureCount ?? 1;
+    const retentionMinimum =
+      previousCount && def.minRefreshRetentionRatio != null
+        ? Math.ceil(previousCount * def.minRefreshRetentionRatio)
+        : 0;
+    const minimum = Math.max(absoluteMinimum, retentionMinimum);
+    if (entry.metadata.featureCount < minimum) {
+      throw new Error(
+        `Dataset "${def.key}" refresh produced ${entry.metadata.featureCount} feature(s); ` +
+          `minimum safe count is ${minimum}`,
+      );
+    }
     this.entries.set(def.key, entry);
     this.loadFailures.delete(def.key);
     return entry.metadata;
@@ -464,7 +478,7 @@ function geometrySchema(bounds: DatasetBounds) {
   const ring = z
     .array(position)
     .min(4)
-    .refine(isClosedRing, 'polygon ring is not closed');
+    .refine(isRingClosed, 'polygon ring is not closed');
   const polygon = z.array(ring).min(1);
 
   return z.discriminatedUnion('type', [
@@ -487,12 +501,6 @@ function geometrySchema(bounds: DatasetBounds) {
       coordinates: z.array(polygon).min(1),
     }),
   ]);
-}
-
-function isClosedRing(ring: number[][]): boolean {
-  const first = ring[0];
-  const last = ring[ring.length - 1];
-  return first[0] === last[0] && first[1] === last[1];
 }
 
 function formatIssues(error: z.ZodError): string {

@@ -1,85 +1,19 @@
-import { Impit } from 'impit';
-import { CookieJar } from 'tough-cookie';
+const HTTP_TIMEOUT_MS = 30_000;
 
-// Shared across all scrapers — tough-cookie scopes cookies by domain, so this
-// is safe. Some endpoints (e.g. Malta Met Office's mariner forecast) require
-// a CSRF cookie primed on a prior request, which only works if cookies persist.
-const cookieJar = new CookieJar();
-
-// Direct egress (default). Used for sources reachable from our server IP, e.g.
-// the ArcGIS dataset refresh.
-const impit = new Impit({
-  browser: 'chrome',
-  ignoreTlsErrors: true,
-  cookieJar,
-});
-
-// Optional egress proxy for sources that block our datacenter IP by reputation
-// regardless of TLS fingerprint (Transport Malta sits behind Cloudflare and
-// 403s our Hetzner IP). Set SCRAPER_PROXY_URL to a `socks5h://` (remote-DNS
-// SOCKS5 — required so the proxy, not us, resolves the target; a local-DNS
-// `socks5://` leaks to IPv6 and fails), `http://` or `https://` proxy. In prod
-// this points at a Cloudflare WARP proxy-mode sidecar. When unset, the proxied
-// client falls back to the direct one, so callers never need to branch.
-const proxyUrl = process.env.SCRAPER_PROXY_URL?.trim();
-export const proxiedImpit = proxyUrl
-  ? new Impit({
-      browser: 'chrome',
-      ignoreTlsErrors: true,
-      cookieJar,
-      proxyUrl,
-    })
-  : impit;
-
-async function fetchWith(
-  client: Impit,
-  url: string,
-  init?: Parameters<typeof impit.fetch>[1],
-) {
-  const res = await client.fetch(url, init);
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} fetching ${url}`);
-  }
-  return res;
+function withTimeout(signal?: AbortSignal | null): AbortSignal {
+  const timeout = AbortSignal.timeout(HTTP_TIMEOUT_MS);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-async function fetchTextWith(
-  client: Impit,
+export function fetchResponse(url: string, init: RequestInit = {}) {
+  return fetch(url, { ...init, signal: withTimeout(init.signal) });
+}
+
+export async function fetchText(
   url: string,
-  init?: Parameters<typeof impit.fetch>[1],
+  init: RequestInit = {},
 ): Promise<string> {
-  return (await fetchWith(client, url, init)).text();
-}
-
-async function fetchBufferWith(
-  client: Impit,
-  url: string,
-  init?: Parameters<typeof impit.fetch>[1],
-): Promise<Buffer> {
-  const res = await fetchWith(client, url, init);
-  return Buffer.from(await res.arrayBuffer());
-}
-
-export function fetchText(
-  url: string,
-  init?: Parameters<typeof impit.fetch>[1],
-): Promise<string> {
-  return fetchTextWith(impit, url, init);
-}
-
-// Proxied variants — route through SCRAPER_PROXY_URL when configured, else
-// identical to the direct helpers. Use these for sources that block our
-// server IP (Transport Malta notice listings and PDFs).
-export function fetchTextViaProxy(
-  url: string,
-  init?: Parameters<typeof impit.fetch>[1],
-): Promise<string> {
-  return fetchTextWith(proxiedImpit, url, init);
-}
-
-export function fetchBufferViaProxy(
-  url: string,
-  init?: Parameters<typeof impit.fetch>[1],
-): Promise<Buffer> {
-  return fetchBufferWith(proxiedImpit, url, init);
+  const response = await fetchResponse(url, init);
+  if (!response.ok) throw new Error(`HTTP ${response.status} fetching ${url}`);
+  return response.text();
 }

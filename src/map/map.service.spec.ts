@@ -6,9 +6,9 @@ import {
 } from './dataset-catalog.service';
 import { NotFoundException } from '@nestjs/common';
 import { MapService } from './map.service';
-import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
+import { NoticeToMariners } from './entities/notice-to-mariners.entity';
 import { UserReport } from './entities/user-report.entity';
-import { NoticeKind } from '../scraper/notice-kind';
+import { NoticeKind } from './notice-kind';
 import type { GetNoticesDto } from './dto/get-notices.dto';
 
 function makeNotice(
@@ -146,7 +146,7 @@ describe('MapService', () => {
     );
     expect(find).toHaveBeenCalledWith(
       expect.objectContaining({
-        order: { activeFrom: 'DESC' },
+        order: { activeFrom: 'DESC', id: 'ASC' },
         take: 26,
         skip: 50,
       }),

@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppController } from '../src/app.controller';
-import { ImpitHealthIndicator } from '../src/common/health/impit-health.indicator';
+import { HttpHealthIndicator } from '../src/common/health/http-health.indicator';
 import { RedisHealthIndicator } from '../src/common/health/redis-health.indicator';
 import { DatasetCatalogService } from '../src/map/dataset-catalog.service';
 
@@ -27,7 +27,7 @@ describe('AppController (e2e)', () => {
         { provide: HealthCheckService, useValue: {} },
         { provide: MemoryHealthIndicator, useValue: {} },
         { provide: TypeOrmHealthIndicator, useValue: {} },
-        { provide: ImpitHealthIndicator, useValue: {} },
+        { provide: HttpHealthIndicator, useValue: {} },
         { provide: DiskHealthIndicator, useValue: {} },
         { provide: RedisHealthIndicator, useValue: {} },
         { provide: DatasetCatalogService, useValue: {} },

@@ -5,9 +5,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminService } from './admin.service';
 import { AdminViewController } from './admin-view.controller';
 import { AdminJwtGuard } from './admin-jwt.guard';
-import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
+import { NoticeToMariners } from '../map/entities/notice-to-mariners.entity';
 import { UserReport } from '../map/entities/user-report.entity';
-import { Logs } from '../scraper/entities/logs.entity';
+import { Logs } from '../common/entities/logs.entity';
 import { MapModule } from '../map/map.module';
 
 @Module({

@@ -4,8 +4,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as Sentry from '@sentry/nestjs';
 import { fetchText } from '../common/utils/http';
-import { Logs } from '../scraper/entities/logs.entity';
-import { LogType } from '../scraper/log-type';
+import { Logs } from '../common/entities/logs.entity';
+import { LogType } from '../common/log-type';
 import { DatasetCatalogService } from './dataset-catalog.service';
 import { DATASETS, type DatasetDefinition } from './datasets';
 import { errorMessage } from '../common/utils/error-message';
@@ -64,17 +64,17 @@ export class DatasetRefreshService implements OnApplicationBootstrap {
         `Failed to refresh dataset "${def.key}" from ${def.sourceUrl}: ${message}`,
       );
       Sentry.captureException(err, {
-        tags: { scraper: 'dataset-refresh', dataset: def.key },
+        tags: { importer: 'dataset-refresh', dataset: def.key },
       });
     }
   }
 
-  // Mirror ScraperService: refresh outcomes go to both stdout and the Logs
+  // Import outcomes refresh outcomes go to both stdout and the Logs
   // table so they surface in the admin audit trail.
   private async recordLog(description: string) {
     this.logger.log(description);
     const log = this.logsRepository.create({
-      logType: LogType.SCRAPING_JOB,
+      logType: LogType.IMPORT_JOB,
       description,
     });
     await this.logsRepository.save(log);

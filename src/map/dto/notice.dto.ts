@@ -1,4 +1,4 @@
-import { NoticeKind } from '../../scraper/notice-kind';
+import { NoticeKind } from '../notice-kind';
 
 // Minimal GeoJSON shapes the backend emits. Coordinates follow the spec's
 // [longitude, latitude] order — note the swap from the entity's {lat, long}.

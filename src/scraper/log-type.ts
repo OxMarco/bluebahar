@@ -1,5 +1,0 @@
-export enum LogType {
-  SCRAPING_JOB = 'SCRAPING_JOB',
-  NEW_NTM_AUTO = 'NEW_NTM_AUTO',
-  NEW_NTM_MANUAL = 'NEW_NTM_MANUAL',
-}

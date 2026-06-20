@@ -2,7 +2,8 @@ import { bbox } from '@turf/bbox';
 import { distance } from '@turf/distance';
 import { lineString, polygon } from '@turf/helpers';
 import { pointOnFeature } from '@turf/point-on-feature';
-import { NoticeToMariners } from '../scraper/entities/notice-to-mariners.entity';
+import { NoticeToMariners } from './entities/notice-to-mariners.entity';
+import { closeRing } from './geo-ring';
 
 type EntityPart = NoticeToMariners['areas'][number];
 type GeoCoordinate = { latitude: number; longitude: number };
@@ -13,19 +14,6 @@ type GeoBoundingCircle = { center: GeoCoordinate; radiusMetres: number };
 // two must never disagree about a part's usable coordinates.
 export function isFinitePoint(p: { lat: number; long: number }): boolean {
   return Number.isFinite(p.lat) && Number.isFinite(p.long);
-}
-
-// GeoJSON linear rings must be closed (first position === last). Shared by the
-// serializer and the anchor logic so both close a ring the same way.
-function isRingClosed(coords: [number, number][]): boolean {
-  if (coords.length < 2) return false;
-  const a = coords[0];
-  const b = coords[coords.length - 1];
-  return a[0] === b[0] && a[1] === b[1];
-}
-
-export function closeRing(coords: [number, number][]): [number, number][] {
-  return isRingClosed(coords) ? coords : [...coords, coords[0]];
 }
 
 function distanceMetres(a: GeoCoordinate, b: GeoCoordinate): number {

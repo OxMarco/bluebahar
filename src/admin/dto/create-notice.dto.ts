@@ -16,7 +16,7 @@ import {
   ValidatorConstraintInterface,
   Validate,
 } from 'class-validator';
-import { NoticeKind } from '../../scraper/notice-kind';
+import { NoticeKind } from '../../map/notice-kind';
 
 // HTML forms send "" for empty optional inputs, which then trips IsDate /
 // IsNumber after the value goes through Type/IsDate. These helpers coerce
