@@ -2,6 +2,12 @@ import type {
   NormalizedFeatureProperties,
   NormalizedLink,
 } from './normalized-feature';
+import {
+  classificationLabel,
+  classificationRank,
+  classificationTags,
+  type BeachClassification,
+} from '../bathing-classification/classification';
 
 // Upstream property bag is untyped JSON. Adapters narrow what they need.
 type RawProperties = Record<string, unknown>;
@@ -186,6 +192,40 @@ function adaptBeach(raw: RawProperties): NormalizedFeatureDraft | null {
       : undefined,
     sourceId: siteCode ?? str(raw.GlobalID),
     sourceUrl: profile,
+  };
+}
+
+// Merge a bathing site's EU water-quality classification onto its normalized
+// beach feature: a prominent water-quality detail row (first, so it leads the
+// sheet), any safety-critical tags (CLOSED / health warning / poor), and the
+// flat waterQuality used for map styling. No classification → feature unchanged.
+export function applyBeachClassification(
+  draft: NormalizedFeatureDraft,
+  classification: BeachClassification | undefined,
+): NormalizedFeatureDraft {
+  if (!classification) return draft;
+  const label = classificationLabel(classification.classification);
+  const value = classification.publishedOn
+    ? `${label} (as of ${classification.publishedOn})`
+    : label;
+  const details = compactDetails([
+    { label: 'Water quality', value },
+    ...(draft.details ?? []),
+  ]);
+  const tags = compactTags([
+    ...classificationTags(classification),
+    ...(draft.tags ?? []),
+  ]);
+  return {
+    ...draft,
+    details,
+    tags,
+    waterQuality: {
+      value: classification.classification,
+      label,
+      rank: classificationRank(classification.classification),
+      ...(classification.healthWarning ? { healthWarning: true } : {}),
+    },
   };
 }
 

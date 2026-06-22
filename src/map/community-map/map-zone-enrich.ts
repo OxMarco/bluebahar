@@ -3,6 +3,14 @@ import { z } from 'zod';
 
 const MAP_ZONE_OUTPUT_SCHEMA = z
   .object({
+    title: z
+      .string()
+      .describe(
+        'A short, specific notice title naming the place and what the ' +
+          'restriction is, e.g. "Marsaxlokk swim zone" or "Il-Bajja anchoring ' +
+          'ban". Six words at most. Use the place name as given. Never include ' +
+          'notice numbers, marker codes, or parenthesised prefixes.',
+      ),
     summary: z
       .string()
       .describe(
@@ -36,6 +44,7 @@ const SYSTEM = [
   'Capture every operational restriction, exception, speed limit, clearance distance, lighting or sound rule, and validity limit stated by the source.',
   'Use the class brief only as fallback context; the source material controls the zone-specific details.',
   'Write concise original wording. Never copy source sentences or invent facts.',
+  'Give the zone a short title that names the place and the restriction; drop any marker code or parenthesised prefix from the place name.',
 ].join(' ');
 
 export interface MapZoneInput {
@@ -101,5 +110,9 @@ export async function enrichMapZone(
   if (restrictions.length === 0) {
     throw new Error('map-zone enrichment omitted operational restrictions');
   }
-  return { ...parsed, restrictions: restrictions.slice(0, 12) };
+  const title = parsed.title.trim();
+  if (!title) {
+    throw new Error('map-zone enrichment omitted the title');
+  }
+  return { ...parsed, title, restrictions: restrictions.slice(0, 12) };
 }

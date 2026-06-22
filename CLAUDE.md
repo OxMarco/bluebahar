@@ -5,6 +5,9 @@ TypeORM/Postgres for storage, Redis for the shared cache and BullMQ queues,
 OpenAI for zone-description enrichment, Sentry for error monitoring, and an
 Handlebars + Tailwind admin panel.
 
+## Live data
+A live instance of this backend can be accessed at https://bluebahar.com
+
 ## Commands
 
 - `npm run start:dev` — watch-mode dev server (needs Postgres + Redis; `make dev`

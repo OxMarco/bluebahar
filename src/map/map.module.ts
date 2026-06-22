@@ -15,12 +15,33 @@ import {
   CommunityMapImportScheduler,
 } from './community-map/community-map-import.scheduler';
 import { CommunityMapImportProcessor } from './community-map/community-map-import.processor';
+import { BathingWaterClassification } from './bathing-classification/bathing-classification.entity';
+import { BathingClassificationImportService } from './bathing-classification/bathing-classification-import.service';
+import {
+  BATHING_CLASSIFICATION_QUEUE,
+  BathingClassificationScheduler,
+} from './bathing-classification/bathing-classification.scheduler';
+import { BathingClassificationProcessor } from './bathing-classification/bathing-classification.processor';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([NoticeToMariners, UserReport, Logs]),
+    TypeOrmModule.forFeature([
+      NoticeToMariners,
+      UserReport,
+      Logs,
+      BathingWaterClassification,
+    ]),
     BullModule.registerQueue({
       name: COMMUNITY_MAP_IMPORT_QUEUE,
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 60_000 },
+        removeOnComplete: 30,
+        removeOnFail: 30,
+      },
+    }),
+    BullModule.registerQueue({
+      name: BATHING_CLASSIFICATION_QUEUE,
       defaultJobOptions: {
         attempts: 3,
         backoff: { type: 'exponential', delay: 60_000 },
@@ -37,6 +58,9 @@ import { CommunityMapImportProcessor } from './community-map/community-map-impor
     CommunityMapImportService,
     CommunityMapImportScheduler,
     CommunityMapImportProcessor,
+    BathingClassificationImportService,
+    BathingClassificationScheduler,
+    BathingClassificationProcessor,
     LogRetentionService,
   ],
   exports: [DatasetCatalogService, MapService],

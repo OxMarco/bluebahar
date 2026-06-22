@@ -191,7 +191,7 @@ export class CommunityMapImportService implements OnModuleInit {
         batch.map(async (zone): Promise<ProcessedZone> => {
           const { layer, zoneName, subKey } = zone;
           seen.add(subKey);
-          const areas = toAreas(zoneName, zone.geometries);
+          const areas = toAreas(displayZoneName(zoneName), zone.geometries);
           const prior = existing.get(subKey);
 
           const { fields, seasonal } = resolveZoneFacts(
@@ -202,15 +202,19 @@ export class CommunityMapImportService implements OnModuleInit {
           );
 
           // Reuse prior output unless a prompt fact changed, it predates the
-          // structured restrictions format, or an importer failure needs retrying.
+          // structured restrictions format, its title still carries the raw
+          // marker prefix (a one-time re-enrich to generate a clean AI title),
+          // or an importer failure needs retrying.
           const stale =
             !prior ||
             descriptionFactsChanged(prior, fields, seasonal) ||
             !hasCurrentDescriptionFormat(prior.description) ||
+            isVertexMarkerName(prior.title) ||
             prior.reviewReasons?.some((reason) =>
               reason.startsWith('community-map-'),
             );
           let description = prior?.description;
+          let title = prior?.title;
           let reviewReasons = prior?.reviewReasons ?? [];
           let attemptedAi = false;
           if (!description || stale) {
@@ -226,12 +230,14 @@ export class CommunityMapImportService implements OnModuleInit {
               prior?.description,
             );
             description = result.description;
+            title = result.title;
             reviewReasons = result.reviewReasons;
             attemptedAi = result.attemptedAi;
           }
 
           const row: CommunityMapRow = {
             ...fields,
+            title: title ?? fields.title,
             description,
             needsReview: reviewReasons.length > 0,
             reviewReasons,
@@ -309,9 +315,11 @@ export class CommunityMapImportService implements OnModuleInit {
     facts: PromptFacts,
     priorDescription?: string,
   ): Promise<DescriptionResult> {
+    const place = displayZoneName(zoneName);
     const sourceText = plainSourceText(sourceDescription);
     if (!sourceText) {
       return {
+        title: place,
         description: usablePriorDescription(priorDescription)
           ? priorDescription
           : fallbackDescription(layer),
@@ -324,7 +332,7 @@ export class CommunityMapImportService implements OnModuleInit {
         this.openai,
         {
           category: layer.key.replace(/-/g, ' '),
-          zoneName,
+          zoneName: place,
           restrictionBrief: layer.restrictionBrief,
           sourceText,
           facts: factLines(facts),
@@ -332,6 +340,7 @@ export class CommunityMapImportService implements OnModuleInit {
         this.enrichModel,
       );
       return {
+        title: e.title,
         description: composeDescription(e),
         reviewReasons: [],
         attemptedAi: true,
@@ -351,6 +360,7 @@ export class CommunityMapImportService implements OnModuleInit {
         `Map-zone description fell back for "${zoneName}": ${errorMessage(err)}`,
       );
       return {
+        title: place,
         description: usablePriorDescription(priorDescription)
           ? priorDescription
           : fallbackDescription(layer),
@@ -384,6 +394,7 @@ interface PromptFacts {
 }
 
 interface DescriptionResult {
+  title: string;
   description: string;
   reviewReasons: string[];
   attemptedAi: boolean;
@@ -418,10 +429,13 @@ function resolveZoneFacts(
     seasonal,
     fields: {
       kind: zone.layer.kind,
-      title: zone.zoneName,
+      // Deterministic display baseline: the place name with the marker prefix
+      // stripped. The AI rewrite (when it runs) overrides `title` in the import
+      // loop; this value stands in when enrichment is skipped or falls back.
+      title: displayZoneName(zone.zoneName),
       source: COMMUNITY_MAP_SOURCE,
       subKey: zone.subKey,
-      locationLabel: zone.zoneName,
+      locationLabel: displayZoneName(zone.zoneName),
       category: zone.layer.key,
       noticeRef:
         parseNoticeRef(zone.sourceDescription) ??
@@ -590,6 +604,16 @@ function normalizeZoneName(name: string): string {
 
 function normalizedIdentity(name: string): string {
   return normalizeZoneName(name).toLocaleLowerCase('en');
+}
+
+// The curated map's placemark labels carry a marker prefix like "(41)" or "(H)"
+// that disambiguates vertices in Google My Maps but means nothing to a mariner.
+// Strip it for anything shown to users; identity/dedup keeps keying off the full
+// normalized name (via `normalizedIdentity`) so "(41) Marsaxlokk" and
+// "(42) Marsaxlokk" stay distinct rows even when their display names collide.
+function displayZoneName(name: string): string {
+  const stripped = name.replace(/^\([^)]{1,8}\)\s*/, '').trim();
+  return stripped.length > 0 ? stripped : name;
 }
 
 function importableGeometries(

@@ -52,6 +52,17 @@ export const configSchema = z.object({
     (v) => (v === '' || v === undefined ? 'true' : v),
     z.enum(['true', 'false']).transform((v) => v === 'true'),
   ),
+  // Bathing-water classification import (EHD weekly "Site Classification Update
+  // Report" PDF, merged onto the beaches layer by Site_Code). Defaults true. The
+  // EHD site sits behind Cloudflare Bot Management; the importer fetches via
+  // impit (browser-fingerprint impersonation), so plain-client 403s don't apply.
+  // The source page and parse model are hardcoded; this is the only knob. String
+  // enum (not coerce.boolean) for the same reason as COMMUNITY_MAP_IMPORT_ENABLED.
+  BATHING_CLASSIFICATION_IMPORT_ENABLED: z.preprocess(
+    (v) => (v === '' || v === undefined ? 'true' : v),
+    z.enum(['true', 'false']).transform((v) => v === 'true'),
+  ),
+
   // Pre-shared admin secret. The user types this into the /admin/login form;
   // the controller constant-time compares it to mint a session JWT. Min length
   // keeps it from being trivially brute-forced.

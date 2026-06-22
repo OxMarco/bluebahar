@@ -23,6 +23,7 @@ function mockClient(output: object) {
 describe('enrichMapZone', () => {
   it('sends the placemark text as untrusted extraction source material', async () => {
     const { client, calls } = mockClient({
+      title: 'Um el Faroud wreck',
       summary: 'A protected wreck site near Żurrieq; keep clear unless diving.',
       restrictions: [
         'Only recreational or technical diving vessels may enter or moor.',
@@ -47,6 +48,7 @@ describe('enrichMapZone', () => {
 
   it('passes deterministic facts alongside the source material', async () => {
     const { client, calls } = mockClient({
+      title: 'Majjistral seabird zone',
       summary: 'A seabird protection area off Majjistral; keep 100 m clear.',
       restrictions: [
         'Vessels must remain at least 100 m clear.',
@@ -75,6 +77,7 @@ describe('enrichMapZone', () => {
 
   it('returns the validated structured fields', async () => {
     const { client } = mockClient({
+      title: 'Blue Lagoon swim zone',
       summary: 'Swimmers zone in the Blue Lagoon; vessels keep out.',
       restrictions: [
         'Vessels and fishing gear are prohibited inside the zone.',
@@ -87,12 +90,14 @@ describe('enrichMapZone', () => {
       sourceText:
         'No vessels or fishing gear may be used within the swimmers zone.',
     });
+    expect(out.title).toBe('Blue Lagoon swim zone');
     expect(out.summary).toMatch(/Blue Lagoon/);
     expect(out.restrictions).toHaveLength(1);
   });
 
   it('rejects output that contains no operational restrictions', async () => {
     const { client } = mockClient({
+      title: 'Generic zone',
       summary: 'A generic zone description.',
       restrictions: ['  '],
     });
@@ -105,5 +110,22 @@ describe('enrichMapZone', () => {
         sourceText: 'Maximum speed is 5 knots.',
       }),
     ).rejects.toThrow('omitted operational restrictions');
+  });
+
+  it('rejects output with a blank title', async () => {
+    const { client } = mockClient({
+      title: '   ',
+      summary: 'Swimmers zone; vessels keep out.',
+      restrictions: ['Vessels are prohibited inside the zone.'],
+    });
+
+    await expect(
+      enrichMapZone(client, {
+        category: 'swimmer zones',
+        zoneName: 'Test zone',
+        restrictionBrief: 'A restricted marine area.',
+        sourceText: 'No vessels may enter the swimmers zone.',
+      }),
+    ).rejects.toThrow('omitted the title');
   });
 });

@@ -12,8 +12,19 @@ export interface NormalizedFeatureProperties {
   media?: NormalizedMedia;
   links?: NormalizedLink[];
   rating?: NormalizedRating;
+  waterQuality?: NormalizedWaterQuality;
   sourceId?: string;
   sourceUrl?: string;
+}
+
+// EU Bathing Water Directive classification merged onto a beach feature.
+// `value` is the machine class (excellent…inaccessible), `label` its display
+// form, `rank` a 0–4 quality score (0 for non-quality statuses) for styling.
+export interface NormalizedWaterQuality {
+  value: string;
+  label: string;
+  rank: number;
+  healthWarning?: boolean;
 }
 
 interface NormalizedDetail {

@@ -170,6 +170,7 @@ describe('community-map enrichment review state', () => {
           },
           priorDescription?: string,
         ): Promise<{
+          title: string;
           description: string;
           reviewReasons: string[];
           attemptedAi: boolean;
@@ -213,6 +214,7 @@ describe('community-map enrichment review state', () => {
     );
 
     expect(result.description).toBe('Previously approved text');
+    expect(result.title).toBe('Test zone');
     expect(result.reviewReasons).toEqual([
       'community-map-ai-enrichment-failed',
     ]);
@@ -243,6 +245,7 @@ describe('community-map enrichment review state', () => {
       responses: {
         create: jest.fn().mockResolvedValue({
           output_text: JSON.stringify({
+            title: 'Test zone speed limit',
             summary: 'A navigation-restricted coastal zone.',
             restrictions: [
               'Vessels must not exceed 5 knots.',
@@ -259,6 +262,7 @@ describe('community-map enrichment review state', () => {
     );
 
     expect(result.reviewReasons).toEqual([]);
+    expect(result.title).toBe('Test zone speed limit');
     expect(result.description).toContain(
       'Restrictions:\n- Vessels must not exceed 5 knots.',
     );

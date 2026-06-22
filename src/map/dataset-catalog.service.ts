@@ -21,9 +21,15 @@ import {
   type DatasetDefinition,
   type DatasetKind,
 } from './datasets';
-import { ADAPTERS } from './normalize/adapters';
+import { ADAPTERS, applyBeachClassification } from './normalize/adapters';
 import type { NormalizedFeatureProperties } from './normalize/normalized-feature';
+import {
+  normalizeSiteCode,
+  type BeachClassification,
+} from './bathing-classification/classification';
 import { isRingClosed } from './geo-ring';
+
+const BEACHES_KEY = 'beaches';
 
 // GeoJSON files are committed to the repo and shipped with the deploy artifact;
 // resolved from process.cwd() since both `npm start` and the Dockerfile's
@@ -94,6 +100,17 @@ export class DatasetCatalogService implements OnModuleInit {
   private readonly logger = new Logger(DatasetCatalogService.name);
   private readonly entries = new Map<string, DatasetEntry>();
   private readonly loadFailures = new Map<string, string>();
+  // EU water-quality classification per bathing-site code, merged onto beach
+  // features at build time. Owned here so EVERY beaches build (boot seed, daily
+  // ArcGIS refresh, or a classification update) merges the current map — the
+  // bathing-classification importer pushes it via setBeachClassifications().
+  private beachClassifications = new Map<string, BeachClassification>();
+  // The last raw beaches GeoJSON, retained so a classification update can rebuild
+  // the beaches entry without re-fetching ArcGIS.
+  private beachesRaw?: string;
+  // Site_Codes present in the current beaches entry, for the importer's
+  // overlap safety rail.
+  private beachSiteCodesSet = new Set<string>();
 
   // OnModuleInit (not OnApplicationBootstrap) on purpose: Nest completes every
   // onModuleInit hook app-wide before any onApplicationBootstrap runs, which
@@ -221,6 +238,46 @@ export class DatasetCatalogService implements OnModuleInit {
     return entry.metadata;
   }
 
+  // The Site_Codes carried by the current beaches entry. Used by the
+  // bathing-classification importer to reject a report whose codes don't overlap
+  // the layer (a sign the wrong PDF was parsed).
+  beachSiteCodes(): ReadonlySet<string> {
+    return this.beachSiteCodesSet;
+  }
+
+  // Replace the bathing-water classifications merged onto beach features and
+  // rebuild the beaches entry in place. Called by the importer after a report
+  // import (or on boot from persisted rows). The rebuild changes the entry's
+  // sha256, so revision()/the manifest move and clients re-fetch. A build error
+  // (e.g. transient) leaves the previous entry serving — never blanks the layer.
+  setBeachClassifications(classifications: Map<string, BeachClassification>): {
+    rebuilt: boolean;
+    merged: number;
+  } {
+    this.beachClassifications = classifications;
+    if (this.beachesRaw === undefined) return { rebuilt: false, merged: 0 };
+    const def = DATASETS.find((d) => d.key === BEACHES_KEY);
+    if (!def) return { rebuilt: false, merged: 0 };
+    try {
+      const entry = this.buildEntry(def, this.beachesRaw);
+      this.entries.set(BEACHES_KEY, entry);
+      this.loadFailures.delete(BEACHES_KEY);
+    } catch (err) {
+      const message = errorMessage(err);
+      this.logger.error(`Failed to apply beach classifications: ${message}`);
+      Sentry.captureException(err, {
+        tags: { dataset: BEACHES_KEY, phase: 'classification-merge' },
+      });
+      return { rebuilt: false, merged: 0 };
+    }
+    // Count how many merged onto an actual site present in the layer.
+    let merged = 0;
+    for (const code of classifications.keys()) {
+      if (this.beachSiteCodesSet.has(code)) merged += 1;
+    }
+    return { rebuilt: true, merged };
+  }
+
   private async loadEntry(
     def: DatasetDefinition,
     filePath: string,
@@ -231,6 +288,11 @@ export class DatasetCatalogService implements OnModuleInit {
 
   private buildEntry(def: DatasetDefinition, raw: string): DatasetEntry {
     const parsed = JSON.parse(raw) as unknown;
+
+    // Retain beaches raw so a classification update can rebuild the merged entry
+    // without re-fetching ArcGIS. Captured before normalize() so even a build
+    // that later throws leaves the raw available for the next attempt.
+    if (def.key === BEACHES_KEY) this.beachesRaw = raw;
 
     // Interactive datasets rebuild their payload from normalized features, so
     // normalize() owns validation and drops unrenderable features (null or
@@ -285,6 +347,7 @@ export class DatasetCatalogService implements OnModuleInit {
     const types = new Set<string>();
     let collectionBbox: GeoJsonBbox | undefined;
     const seenIds = new Set<string>();
+    const beachCodes = def.key === BEACHES_KEY ? new Set<string>() : undefined;
     for (const [index, feature] of parsed.features.entries()) {
       // Upstream feature services return rows without a mapped location as
       // null-geometry features; they can't be plotted, so skip them rather
@@ -306,7 +369,21 @@ export class DatasetCatalogService implements OnModuleInit {
         droppedNoTitle += 1;
         continue;
       }
-      const id = featureId(def.key, normalized, rawProps, index, seenIds);
+      // Merge the EU water-quality classification onto beach features, keyed by
+      // the same Site_Code the report uses. The site code is also collected for
+      // the importer's overlap rail.
+      let enriched = normalized;
+      if (beachCodes) {
+        const code = beachSiteCode(rawProps);
+        if (code) {
+          beachCodes.add(code);
+          enriched = applyBeachClassification(
+            normalized,
+            this.beachClassifications.get(code),
+          );
+        }
+      }
+      const id = featureId(def.key, enriched, rawProps, index, seenIds);
       const bbox = geoJsonBbox(feature.geometry);
       types.add(geomResult.data.type);
       if (bbox) collectionBbox = foldBbox(collectionBbox, bbox);
@@ -315,9 +392,10 @@ export class DatasetCatalogService implements OnModuleInit {
         id,
         ...(bbox ? { bbox } : {}),
         geometry: feature.geometry,
-        properties: { ...normalized, id, ...stylingPrimitives(normalized) },
+        properties: { ...enriched, id, ...stylingPrimitives(enriched) },
       });
     }
+    if (beachCodes) this.beachSiteCodesSet = beachCodes;
     const dropped = droppedNoTitle + droppedNoGeometry + droppedInvalidGeometry;
     if (dropped > 0) {
       this.logger.warn(
@@ -364,7 +442,21 @@ function stylingPrimitives(
     // ['in', ',Blue Flag,', ['get', 'tagsCsv']].
     flat.tagsCsv = `,${normalized.tags.join(',')},`;
   }
+  if (normalized.waterQuality) {
+    // Surfaced flat so a beach layer can colour pins by class
+    // (['get','waterQualityValue']) or scale by the 0–4 quality rank.
+    flat.waterQualityValue = normalized.waterQuality.value;
+    flat.waterQualityRank = normalized.waterQuality.rank;
+  }
   return flat;
+}
+
+// The canonical Site_Code (A01…D23) for a beaches feature, or undefined when
+// the upstream row carries none. Used to join the EHD classification report.
+function beachSiteCode(rawProps: Record<string, unknown>): string | undefined {
+  const raw =
+    typeof rawProps.Site_Code === 'string' ? rawProps.Site_Code.trim() : '';
+  return raw ? normalizeSiteCode(raw) : undefined;
 }
 
 function validateFeatureCollection(

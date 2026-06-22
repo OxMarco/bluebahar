@@ -130,6 +130,80 @@ describe('DatasetCatalogService', () => {
       metadata.sha256,
     );
   });
+
+  it('collects Site_Codes from the beaches layer', () => {
+    const definition = DATASETS.find((dataset) => dataset.key === 'beaches');
+    if (!definition) throw new Error('Expected beaches definition');
+    service.refreshEntry(definition, beachPayload(80));
+
+    expect(service.beachSiteCodes().size).toBe(80);
+    expect(service.beachSiteCodes().has('TEST-0')).toBe(true);
+  });
+
+  it('merges water-quality classification onto matching beach features', () => {
+    const definition = DATASETS.find((dataset) => dataset.key === 'beaches');
+    if (!definition) throw new Error('Expected beaches definition');
+    service.refreshEntry(definition, beachPayload(80));
+
+    const result = service.setBeachClassifications(
+      new Map([
+        [
+          'TEST-0',
+          {
+            classification: 'poor',
+            healthWarning: true,
+            publishedOn: '1 June 2026',
+          },
+        ],
+      ]),
+    );
+    expect(result).toEqual({ rebuilt: true, merged: 1 });
+
+    const payload = JSON.parse(service.requireEntry('beaches').payload) as {
+      features: { properties: Record<string, unknown> }[];
+    };
+    const classified = payload.features.find(
+      (f) => f.properties.sourceId === 'TEST-0',
+    );
+    if (!classified) throw new Error('Expected the classified feature');
+
+    expect(classified.properties.waterQuality).toEqual({
+      value: 'poor',
+      label: 'Poor',
+      rank: 1,
+      healthWarning: true,
+    });
+    expect(classified.properties.waterQualityValue).toBe('poor');
+    expect(classified.properties.waterQualityRank).toBe(1);
+    expect(classified.properties.tagsCsv).toContain(',Poor water quality,');
+    expect(classified.properties.tagsCsv).toContain('Health warning');
+    expect(
+      (classified.properties.details as { label: string; value: string }[])[0],
+    ).toEqual({
+      label: 'Water quality',
+      value: 'Poor (as of 1 June 2026)',
+    });
+
+    // A site with no classification stays unclassified.
+    const unclassified = payload.features.find(
+      (f) => f.properties.sourceId === 'TEST-1',
+    );
+    expect(unclassified?.properties.waterQuality).toBeUndefined();
+  });
+
+  it('rebuilds beaches and counts only codes present in the layer', () => {
+    const definition = DATASETS.find((dataset) => dataset.key === 'beaches');
+    if (!definition) throw new Error('Expected beaches definition');
+    service.refreshEntry(definition, beachPayload(80));
+
+    const result = service.setBeachClassifications(
+      new Map([
+        ['TEST-0', { classification: 'excellent', healthWarning: false }],
+        ['NOT-IN-LAYER', { classification: 'good', healthWarning: false }],
+      ]),
+    );
+    expect(result).toEqual({ rebuilt: true, merged: 1 });
+  });
 });
 
 function beachPayload(count: number): string {

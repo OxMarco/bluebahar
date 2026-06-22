@@ -74,6 +74,35 @@ exponential backoff. Set `COMMUNITY_MAP_IMPORT_ENABLED=false` to disable it.
 > An `OPENAI_API_KEY` is **required** — there is no key-free import path. The
 > model is `ENRICH_MODEL` → `OPENAI_MODEL` → `gpt-5.5` (first set wins).
 
+## Bathing-water classification import
+
+The Environmental Health Directorate publishes a weekly **Site Classification
+Update Report** giving each bathing site (`A01`…`D23`) its EU water-quality class
+(Excellent / Good / Sufficient / Poor) plus operational statuses (Closed,
+Inaccessible) and any health warning. Because the report keys on the same
+`Site_Code` the `beaches` dataset carries, the import joins it straight onto
+beach features rather than adding a new layer (`src/map/bathing-classification/`):
+
+1. Fetches the latest report PDF — the newest report scraped from the EHD
+   programme page (`report-source.ts`). The EHD site sits behind Cloudflare Bot
+   Management, so the fetch uses [`impit`](https://github.com/apify/impit)
+   (browser TLS-fingerprint impersonation) rather than plain `fetch`, which is
+   403'd on fingerprint regardless of headers.
+2. Extracts the `Site_Code → classification` table with a vision/file-capable
+   OpenAI model (`report-parse.ts`); the model output is validated against a
+   strict schema and a minimum site count.
+3. Refuses a report that barely overlaps the beaches layer (wrong PDF guard),
+   then upserts the classifications (`BathingWaterClassification`) and rebuilds
+   the in-memory `beaches` entry so each feature gains a **Water quality**
+   detail row, prominent tags for closed/health-warning/poor sites, and a
+   `waterQualityValue`/`waterQualityRank` styling primitive.
+
+Persisted classifications are re-applied to the layer on every boot, so a restart
+(or an EHD outage) keeps the last good data. The import runs on boot and daily at
+04:00 via BullMQ; set `BATHING_CLASSIFICATION_IMPORT_ENABLED=false` to disable it.
+The source page and the parse model (`ENRICH_MODEL` → `OPENAI_MODEL` → `gpt-5.5`)
+are hardcoded — the enable flag is the only knob.
+
 ## Admin panel
 
 Browser-only. Visit `/admin/login` and enter the `ADMIN_API_KEY` value; on
